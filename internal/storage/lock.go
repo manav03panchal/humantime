@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 const (
@@ -51,9 +50,9 @@ func (l *FileLock) Acquire() error {
 	}
 
 	// Try to acquire an exclusive lock (non-blocking)
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := flockAcquire(file); err != nil {
 		file.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
+		if errors.Is(err, ErrLockAlreadyHeld) {
 			// Read the PID from the lock file to provide a better error message
 			pid := l.readPID()
 			if pid > 0 {
@@ -61,27 +60,27 @@ func (l *FileLock) Acquire() error {
 			}
 			return ErrLockAlreadyHeld
 		}
-		return fmt.Errorf("%w: %v", ErrLockAcquireFailed, err)
+		return err
 	}
 
 	// Write our PID to the lock file
 	if err := file.Truncate(0); err != nil {
-		syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		flockRelease(file)
 		file.Close()
 		return fmt.Errorf("%w: %v", ErrLockAcquireFailed, err)
 	}
 	if _, err := file.Seek(0, 0); err != nil {
-		syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		flockRelease(file)
 		file.Close()
 		return fmt.Errorf("%w: %v", ErrLockAcquireFailed, err)
 	}
 	if _, err := fmt.Fprintf(file, "%d", os.Getpid()); err != nil {
-		syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		flockRelease(file)
 		file.Close()
 		return fmt.Errorf("%w: %v", ErrLockAcquireFailed, err)
 	}
 	if err := file.Sync(); err != nil {
-		syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		flockRelease(file)
 		file.Close()
 		return fmt.Errorf("%w: %v", ErrLockAcquireFailed, err)
 	}
@@ -97,7 +96,7 @@ func (l *FileLock) Release() error {
 	}
 
 	// Unlock and close the file
-	if err := syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN); err != nil {
+	if err := flockRelease(l.file); err != nil {
 		l.file.Close()
 		return err
 	}
@@ -154,19 +153,7 @@ func (l *FileLock) readPID() int {
 	return pid
 }
 
-// isProcessRunning checks if a process with the given PID is still running.
-func isProcessRunning(pid int) bool {
-	// On Unix systems, sending signal 0 to a process checks if it exists
-	// without actually sending a signal
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-
-	// On Unix, FindProcess always succeeds, so we need to actually send signal 0
-	err = process.Signal(syscall.Signal(0))
-	return err == nil
-}
+// isProcessRunning is implemented in platform-specific files (lock_unix.go, lock_windows.go)
 
 // LockError provides a user-friendly error message for lock failures.
 type LockError struct {
