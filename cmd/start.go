@@ -223,6 +223,11 @@ func runResume(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Save undo state
+	if err := ctx.UndoRepo.SaveUndoStart(block.Key); err != nil {
+		ctx.Debugf("Failed to save undo state: %v", err)
+	}
+
 	if err := ctx.ActiveBlockRepo.SetActive(block.Key); err != nil {
 		return err
 	}

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/manav03panchal/humantime/internal/parser"
@@ -65,6 +67,11 @@ func runStop(cmd *cobra.Command, args []string) error {
 	// Validate end time is after start
 	if block.TimestampEnd.Before(block.TimestampStart) {
 		return runtime.ErrEndBeforeStart
+	}
+
+	// Validate end time is not in the future
+	if block.TimestampEnd.After(time.Now().Add(time.Minute)) {
+		return runtime.NewValidationError("stop", "end time cannot be in the future")
 	}
 
 	// Update note if provided

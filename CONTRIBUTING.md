@@ -13,7 +13,7 @@ Welcome to Humantime! We are excited to have you contribute to this CLI time tra
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/humantime.git
+   git clone https://github.com/manav03panchal/humantime.git
    cd humantime
    ```
 
