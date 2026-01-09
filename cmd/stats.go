@@ -20,6 +20,7 @@ var (
 	statsFlagFrom    string
 	statsFlagUntil   string
 	statsFlagGroup   string
+	statsFlagTag     string
 )
 
 // statsCmd represents the stats command.
@@ -44,6 +45,7 @@ func init() {
 	statsCmd.Flags().StringVar(&statsFlagFrom, "from", "", "Start of time range")
 	statsCmd.Flags().StringVar(&statsFlagUntil, "until", "", "End of time range")
 	statsCmd.Flags().StringVarP(&statsFlagGroup, "group", "g", "auto", "Grouping: day, week, month, auto")
+	statsCmd.Flags().StringVar(&statsFlagTag, "tag", "", "Filter by tag")
 
 	// Dynamic completion for projects/tasks
 	statsCmd.ValidArgsFunction = completeBlocksArgs
@@ -89,6 +91,7 @@ func runStats(cmd *cobra.Command, args []string) error {
 	filter := storage.BlockFilter{
 		ProjectSID: parsed.ProjectSID,
 		TaskSID:    parsed.TaskSID,
+		Tag:        statsFlagTag,
 		StartAfter: timeRange.Start,
 		EndBefore:  timeRange.End,
 	}

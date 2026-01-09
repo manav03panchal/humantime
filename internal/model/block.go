@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -12,8 +13,20 @@ type Block struct {
 	ProjectSID     string    `json:"project_sid" validate:"required,max=32"`
 	TaskSID        string    `json:"task_sid,omitempty" validate:"max=32"`
 	Note           string    `json:"note,omitempty" validate:"max=65536"`
+	Tags           []string  `json:"tags,omitempty"`
 	TimestampStart time.Time `json:"timestamp_start" validate:"required"`
 	TimestampEnd   time.Time `json:"timestamp_end,omitempty"`
+}
+
+// HasTag returns true if the block has the specified tag (case-insensitive).
+func (b *Block) HasTag(tag string) bool {
+	tagLower := strings.ToLower(tag)
+	for _, t := range b.Tags {
+		if strings.ToLower(t) == tagLower {
+			return true
+		}
+	}
+	return false
 }
 
 // SetKey sets the database key for this block.

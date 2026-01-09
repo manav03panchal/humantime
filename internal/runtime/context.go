@@ -22,6 +22,7 @@ type Context struct {
 	ConfigRepo      *storage.ConfigRepo
 	ActiveBlockRepo *storage.ActiveBlockRepo
 	GoalRepo        *storage.GoalRepo
+	UndoRepo        *storage.UndoRepo
 
 	// Debug mode
 	Debug bool
@@ -74,6 +75,7 @@ func New(opts Options) (*Context, error) {
 	configRepo := storage.NewConfigRepo(db)
 	activeBlockRepo := storage.NewActiveBlockRepo(db)
 	goalRepo := storage.NewGoalRepo(db)
+	undoRepo := storage.NewUndoRepo(db)
 
 	// Get or create config
 	config, err := configRepo.Get()
@@ -97,6 +99,7 @@ func New(opts Options) (*Context, error) {
 		ConfigRepo:      configRepo,
 		ActiveBlockRepo: activeBlockRepo,
 		GoalRepo:        goalRepo,
+		UndoRepo:        undoRepo,
 		Debug:           opts.Debug,
 	}, nil
 }

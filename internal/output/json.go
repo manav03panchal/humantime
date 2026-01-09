@@ -24,14 +24,15 @@ type StatusResponse struct {
 
 // BlockOutput represents a block in JSON output.
 type BlockOutput struct {
-	Key             string  `json:"key"`
-	ProjectSID      string  `json:"project_sid"`
-	TaskSID         string  `json:"task_sid,omitempty"`
-	Note            string  `json:"note,omitempty"`
-	TimestampStart  string  `json:"timestamp_start"`
-	TimestampEnd    string  `json:"timestamp_end,omitempty"`
-	DurationSeconds int64   `json:"duration_seconds"`
-	IsActive        bool    `json:"is_active"`
+	Key             string   `json:"key"`
+	ProjectSID      string   `json:"project_sid"`
+	TaskSID         string   `json:"task_sid,omitempty"`
+	Note            string   `json:"note,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
+	TimestampStart  string   `json:"timestamp_start"`
+	TimestampEnd    string   `json:"timestamp_end,omitempty"`
+	DurationSeconds int64    `json:"duration_seconds"`
+	IsActive        bool     `json:"is_active"`
 }
 
 // NewBlockOutput creates a BlockOutput from a Block.
@@ -41,6 +42,7 @@ func NewBlockOutput(b *model.Block) *BlockOutput {
 		ProjectSID:      b.ProjectSID,
 		TaskSID:         b.TaskSID,
 		Note:            b.Note,
+		Tags:            b.Tags,
 		TimestampStart:  b.TimestampStart.Format(time.RFC3339),
 		DurationSeconds: b.DurationSeconds(),
 		IsActive:        b.IsActive(),

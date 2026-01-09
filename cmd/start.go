@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ var (
 	startFlagNote    string
 	startFlagStart   string
 	startFlagEnd     string
+	startFlagTag     string
 )
 
 // startCmd represents the start command.
@@ -51,6 +53,7 @@ func init() {
 	startCmd.Flags().StringVarP(&startFlagNote, "note", "n", "", "Note for the block")
 	startCmd.Flags().StringVarP(&startFlagStart, "start", "s", "", "Start timestamp")
 	startCmd.Flags().StringVarP(&startFlagEnd, "end", "e", "", "End timestamp (creates completed block)")
+	startCmd.Flags().StringVar(&startFlagTag, "tag", "", "Comma-separated tags (e.g., billable,urgent)")
 
 	// Dynamic completion for projects/tasks
 	startCmd.ValidArgsFunction = completeStartArgs
@@ -147,6 +150,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		parsed.TimestampStart,
 	)
 
+	// Add tags if specified
+	if startFlagTag != "" {
+		tags := strings.Split(startFlagTag, ",")
+		for i, tag := range tags {
+			tags[i] = strings.TrimSpace(tag)
+		}
+		block.Tags = tags
+	}
+
 	// If end time specified, create completed block
 	if !parsed.TimestampEnd.IsZero() {
 		block.TimestampEnd = parsed.TimestampEnd
@@ -155,6 +167,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Save the block
 	if err := ctx.BlockRepo.Create(block); err != nil {
 		return err
+	}
+
+	// Save undo state
+	if err := ctx.UndoRepo.SaveUndoStart(block.Key); err != nil {
+		// Non-fatal error, just log if debug
+		ctx.Debugf("Failed to save undo state: %v", err)
 	}
 
 	// Update active tracking (only if no end time)

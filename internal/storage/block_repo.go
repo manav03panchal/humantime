@@ -115,6 +115,7 @@ func (r *BlockRepo) ListByTimeRange(start, end time.Time) ([]*model.Block, error
 type BlockFilter struct {
 	ProjectSID string
 	TaskSID    string
+	Tag        string
 	StartAfter time.Time
 	EndBefore  time.Time
 	Limit      int
@@ -136,6 +137,11 @@ func (r *BlockRepo) ListFiltered(filter BlockFilter) ([]*model.Block, error) {
 
 		// Apply task filter
 		if filter.TaskSID != "" && b.TaskSID != filter.TaskSID {
+			continue
+		}
+
+		// Apply tag filter
+		if filter.Tag != "" && !b.HasTag(filter.Tag) {
 			continue
 		}
 
