@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -271,29 +272,58 @@ func printBlocksCLI(blocks []*model.Block, totalCount int) error {
 	cli.Title(fmt.Sprintf("Time Blocks (showing %d of %d)", len(blocks), totalCount))
 	cli.Println("")
 
+	// Calculate max widths for alignment
+	maxProjectLen := 0
+	maxDurationLen := 0
+	for _, block := range blocks {
+		loc := block.ProjectSID
+		if block.TaskSID != "" {
+			loc += "/" + block.TaskSID
+		}
+		if len(loc) > maxProjectLen {
+			maxProjectLen = len(loc)
+		}
+		dur := output.FormatDuration(block.Duration())
+		if len(dur) > maxDurationLen {
+			maxDurationLen = len(dur)
+		}
+	}
+	if maxProjectLen < 12 {
+		maxProjectLen = 12
+	}
+	if maxDurationLen < 8 {
+		maxDurationLen = 8
+	}
+
 	var totalDuration int64
 	for _, block := range blocks {
 		// Format project/task
 		location := cli.FormatProjectTask(block.ProjectSID, block.TaskSID)
+		locationPlain := block.ProjectSID
+		if block.TaskSID != "" {
+			locationPlain += "/" + block.TaskSID
+		}
 		duration := output.FormatDuration(block.Duration())
 		totalDuration += block.DurationSeconds()
 
-		// Print block
-		cli.Printf("%s  %s\n", location, cli.Duration(duration))
-		if block.Note != "" {
-			cli.Printf("  %s\n", cli.Note(block.Note))
-		}
+		// Build time range string
+		var timeRange string
 		if block.IsActive() {
-			cli.Printf("  %s - (active)\n", output.FormatTimeShort(block.TimestampStart))
+			timeRange = output.FormatTimeShort(block.TimestampStart) + " - (active)"
 		} else {
-			cli.Printf("  %s - %s\n",
-				output.FormatTimeShort(block.TimestampStart),
-				output.FormatTimeOnly(block.TimestampEnd))
+			timeRange = output.FormatTimeShort(block.TimestampStart) + " - " + output.FormatTimeOnly(block.TimestampEnd)
 		}
-		cli.Println("")
+
+		// Print aligned row
+		padding := maxProjectLen - len(locationPlain)
+		cli.Printf("%s%s  %*s  %s\n", location, strings.Repeat(" ", padding), maxDurationLen, cli.Duration(duration), timeRange)
+		if block.Note != "" {
+			cli.Printf("%s  %s\n", strings.Repeat(" ", maxProjectLen), cli.Note(block.Note))
+		}
 	}
 
-	cli.Printf("Total: %s\n", cli.Duration(output.FormatDuration(time.Duration(totalDuration)*time.Second)))
+	cli.Println(strings.Repeat("─", maxProjectLen+maxDurationLen+25))
+	cli.Printf("%-*s  %*s\n", maxProjectLen, "Total:", maxDurationLen, cli.Duration(output.FormatDuration(time.Duration(totalDuration)*time.Second)))
 	return nil
 }
 

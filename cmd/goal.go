@@ -339,8 +339,26 @@ func printGoalsCLI(goals []*GoalOutput) error {
 	cli.Title(fmt.Sprintf("Goals (%d)", len(goals)))
 	cli.Println("")
 
+	// Calculate max widths
+	maxProjectLen := 0
+	maxProgressLen := 0
 	for _, g := range goals {
-		typeLabel := "daily"
+		if len(g.ProjectSID) > maxProjectLen {
+			maxProjectLen = len(g.ProjectSID)
+		}
+		progress := fmt.Sprintf("%s/%s",
+			output.FormatDuration(time.Duration(g.Progress.CurrentSeconds)*time.Second),
+			output.FormatDuration(time.Duration(g.TargetSeconds)*time.Second))
+		if len(progress) > maxProgressLen {
+			maxProgressLen = len(progress)
+		}
+	}
+	if maxProjectLen < 12 {
+		maxProjectLen = 12
+	}
+
+	for _, g := range goals {
+		typeLabel := "daily "
 		if g.Type == string(model.GoalTypeWeekly) {
 			typeLabel = "weekly"
 		}
@@ -355,11 +373,17 @@ func printGoalsCLI(goals []*GoalOutput) error {
 			statusIndicator = " [DONE]"
 		}
 
-		cli.Printf("%s  %s  %s/%s  %s  %.0f%%%s\n",
+		progress := fmt.Sprintf("%s/%s",
+			output.FormatDuration(time.Duration(g.Progress.CurrentSeconds)*time.Second),
+			output.FormatDuration(time.Duration(g.TargetSeconds)*time.Second))
+
+		padding := maxProjectLen - len(g.ProjectSID)
+		cli.Printf("  %s%s  %s  %*s  %s  %5.1f%%%s\n",
 			cli.ProjectName(g.ProjectSID),
+			strings.Repeat(" ", padding),
 			typeLabel,
-			cli.Duration(output.FormatDuration(time.Duration(g.Progress.CurrentSeconds)*time.Second)),
-			output.FormatDuration(time.Duration(g.TargetSeconds)*time.Second),
+			maxProgressLen,
+			progress,
 			bar,
 			g.Progress.Percentage,
 			statusIndicator,

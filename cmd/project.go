@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -292,18 +293,40 @@ func printProjectsCLI(projects []*model.Project, durations map[string]int64) err
 	cli.Title(fmt.Sprintf("Projects (%d)", len(projects)))
 	cli.Println("")
 
+	// Calculate max widths
+	maxSIDLen := 0
+	maxDurationLen := 0
+	for _, p := range projects {
+		if len(p.SID) > maxSIDLen {
+			maxSIDLen = len(p.SID)
+		}
+		dur := output.FormatDuration(secondsToDuration(durations[p.SID]))
+		if len(dur) > maxDurationLen {
+			maxDurationLen = len(dur)
+		}
+	}
+	if maxSIDLen < 12 {
+		maxSIDLen = 12
+	}
+	if maxDurationLen < 8 {
+		maxDurationLen = 8
+	}
+
 	var totalDuration int64
 	for _, p := range projects {
 		dur := durations[p.SID]
 		totalDuration += dur
-		cli.Printf("• %s  %s\n", cli.ProjectName(p.SID), cli.Duration(output.FormatDuration(secondsToDuration(dur))))
+		padding := maxSIDLen - len(p.SID)
+		cli.Printf("  %s%s  %*s", cli.ProjectName(p.SID), strings.Repeat(" ", padding), maxDurationLen, cli.Duration(output.FormatDuration(secondsToDuration(dur))))
 		if p.DisplayName != p.SID {
-			cli.Printf("  %s\n", p.DisplayName)
+			cli.Printf("  %s", p.DisplayName)
 		}
+		cli.Println("")
 	}
 
 	cli.Println("")
-	cli.Printf("Total tracked: %s\n", cli.Duration(output.FormatDuration(secondsToDuration(totalDuration))))
+	cli.Println(strings.Repeat("─", maxSIDLen+maxDurationLen+6))
+	cli.Printf("  %-*s  %*s\n", maxSIDLen, "Total:", maxDurationLen, cli.Duration(output.FormatDuration(secondsToDuration(totalDuration))))
 
 	return nil
 }

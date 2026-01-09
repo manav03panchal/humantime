@@ -154,26 +154,28 @@ func (c *CLIFormatter) FormatProjectTask(projectSID, taskSID string) string {
 // PrintTrackingStarted prints a tracking started message.
 func (c *CLIFormatter) PrintTrackingStarted(block *model.Block) {
 	c.Printf("Started tracking on %s\n", c.FormatProjectTask(block.ProjectSID, block.TaskSID))
+	c.Println("")
 	if block.Note != "" {
-		c.Printf("  Note: %s\n", c.Note(block.Note))
+		c.Printf("  %-10s %s\n", "Note:", c.Note(block.Note))
 	}
-	c.Printf("  Started: %s\n", FormatTime(block.TimestampStart))
+	c.Printf("  %-10s %s\n", "Started:", FormatTime(block.TimestampStart))
 
 	if !block.TimestampEnd.IsZero() {
-		c.Printf("  Ended: %s\n", FormatTime(block.TimestampEnd))
-		c.Printf("  Duration: %s\n", c.Duration(FormatDuration(block.Duration())))
+		c.Printf("  %-10s %s\n", "Ended:", FormatTime(block.TimestampEnd))
+		c.Printf("  %-10s %s\n", "Duration:", c.Duration(FormatDuration(block.Duration())))
 	}
 }
 
 // PrintTrackingStopped prints a tracking stopped message.
 func (c *CLIFormatter) PrintTrackingStopped(block *model.Block) {
 	c.Printf("Stopped tracking on %s\n", c.FormatProjectTask(block.ProjectSID, block.TaskSID))
-	c.Printf("  Duration: %s\n", c.Duration(FormatDuration(block.Duration())))
+	c.Println("")
+	c.Printf("  %-10s %s\n", "Duration:", c.Duration(FormatDuration(block.Duration())))
 	if block.Note != "" {
-		c.Printf("  Note: %s\n", c.Note(block.Note))
+		c.Printf("  %-10s %s\n", "Note:", c.Note(block.Note))
 	}
-	c.Printf("  Started: %s\n", FormatTime(block.TimestampStart))
-	c.Printf("  Ended: %s\n", FormatTime(block.TimestampEnd))
+	c.Printf("  %-10s %s\n", "Started:", FormatTime(block.TimestampStart))
+	c.Printf("  %-10s %s\n", "Ended:", FormatTime(block.TimestampEnd))
 }
 
 // PrintStatus prints current tracking status.
@@ -185,10 +187,11 @@ func (c *CLIFormatter) PrintStatus(block *model.Block) {
 	}
 
 	c.Printf("Currently tracking: %s\n", c.FormatProjectTask(block.ProjectSID, block.TaskSID))
-	c.Printf("  Started: %s\n", FormatTime(block.TimestampStart))
-	c.Printf("  Duration: %s\n", c.Duration(FormatDuration(block.Duration())))
+	c.Println("")
+	c.Printf("  %-10s %s\n", "Started:", FormatTime(block.TimestampStart))
+	c.Printf("  %-10s %s\n", "Duration:", c.Duration(FormatDuration(block.Duration())))
 	if block.Note != "" {
-		c.Printf("  Note: %s\n", c.Note(block.Note))
+		c.Printf("  %-10s %s\n", "Note:", c.Note(block.Note))
 	}
 }
 

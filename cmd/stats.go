@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -121,27 +122,47 @@ func printStatsCLI(blocks []*model.Block, projectAggs []storage.ProjectAggregate
 		return nil
 	}
 
-	// Calculate total duration
+	// Calculate total duration and max widths
 	var totalDuration time.Duration
+	maxProjectLen := 0
+	maxDurationLen := 0
 	for _, agg := range projectAggs {
 		totalDuration += agg.Duration
+		if len(agg.ProjectSID) > maxProjectLen {
+			maxProjectLen = len(agg.ProjectSID)
+		}
+		dur := output.FormatDuration(agg.Duration)
+		if len(dur) > maxDurationLen {
+			maxDurationLen = len(dur)
+		}
+	}
+	if maxProjectLen < 12 {
+		maxProjectLen = 12
+	}
+	if maxDurationLen < 8 {
+		maxDurationLen = 8
 	}
 
 	cli.Println("By Project:")
+	cli.Println("")
 	for _, agg := range projectAggs {
 		percentage := float64(agg.Duration) / float64(totalDuration) * 100
 		barWidth := 20
 		bar := output.ProgressBar(percentage, barWidth)
 
-		cli.Printf("  %s  %s  %s  %.0f%%\n",
+		padding := maxProjectLen - len(agg.ProjectSID)
+		cli.Printf("  %s%s  %*s  %s  %5.1f%%\n",
 			cli.ProjectName(agg.ProjectSID),
+			strings.Repeat(" ", padding),
+			maxDurationLen,
 			cli.Duration(output.FormatDuration(agg.Duration)),
 			bar,
 			percentage)
 	}
 
 	cli.Println("")
-	cli.Printf("Total: %s\n", cli.Duration(output.FormatDuration(totalDuration)))
+	cli.Println(strings.Repeat("─", maxProjectLen+maxDurationLen+35))
+	cli.Printf("  %-*s  %*s\n", maxProjectLen, "Total:", maxDurationLen, cli.Duration(output.FormatDuration(totalDuration)))
 
 	return nil
 }
