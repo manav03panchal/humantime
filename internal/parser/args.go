@@ -98,7 +98,15 @@ func Parse(args []string) *ParsedArgs {
 		}
 
 		// If expecting project, the next token is the project/task
+		// But first check if it looks like a time expression (e.g., "11am", "9pm")
 		if expectProject {
+			if isTimeLike(token) {
+				// It's a time expression, not a project name
+				timestampTokens = append(timestampTokens, token)
+				expectTimestamp = true
+				expectProject = false
+				continue
+			}
 			result.RawProject = token
 			result.ProjectSID, result.TaskSID = ParseProjectTask(token)
 			result.HasProject = result.ProjectSID != ""
