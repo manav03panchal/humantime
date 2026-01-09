@@ -3,6 +3,8 @@ package runtime
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"syscall"
 )
 
 // Common errors.
@@ -19,6 +21,7 @@ var (
 	ErrInvalidColor      = errors.New("invalid color format (use #RRGGBB)")
 	ErrInvalidGoalType   = errors.New("invalid goal type (use daily or weekly)")
 	ErrInvalidDuration   = errors.New("invalid duration")
+	ErrDiskFull          = errors.New("disk full: unable to write to database")
 )
 
 // ParseError represents a parsing error with context.
@@ -71,6 +74,7 @@ var Suggestions = map[error]string{
 	ErrTaskNotFound:     "Use 'humantime task' to see tasks for a project.",
 	ErrInvalidColor:     "Use hex color format like '#FF5733' or '#00FF00'.",
 	ErrInvalidGoalType:  "Use --daily or --weekly to set goal type.",
+	ErrDiskFull:         "Free up disk space and try again. Your active tracking state is preserved in memory.",
 }
 
 // GetSuggestion returns a suggestion for an error, if available.
@@ -90,4 +94,89 @@ func FormatError(err error) string {
 		msg += "\n" + suggestion
 	}
 	return msg
+}
+
+// DiskFullError represents a disk full condition with additional context.
+type DiskFullError struct {
+	Op      string // The operation that failed (e.g., "write", "sync")
+	Path    string // The path involved, if known
+	wrapped error  // The underlying error
+}
+
+func (e *DiskFullError) Error() string {
+	if e.Path != "" {
+		return fmt.Sprintf("disk full during %s on %s: %v", e.Op, e.Path, e.wrapped)
+	}
+	return fmt.Sprintf("disk full during %s: %v", e.Op, e.wrapped)
+}
+
+func (e *DiskFullError) Unwrap() error {
+	return ErrDiskFull
+}
+
+// NewDiskFullError creates a new DiskFullError.
+func NewDiskFullError(op, path string, err error) *DiskFullError {
+	return &DiskFullError{
+		Op:      op,
+		Path:    path,
+		wrapped: err,
+	}
+}
+
+// IsDiskFullError checks if an error indicates a disk full condition.
+// It checks for ENOSPC (Linux/macOS) and common disk full error patterns.
+func IsDiskFullError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check if it's already our DiskFullError
+	var diskFullErr *DiskFullError
+	if errors.As(err, &diskFullErr) {
+		return true
+	}
+
+	// Check if it's our sentinel error
+	if errors.Is(err, ErrDiskFull) {
+		return true
+	}
+
+	// Check for ENOSPC (no space left on device)
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		if errno == syscall.ENOSPC {
+			return true
+		}
+	}
+
+	// Check error message for disk full patterns
+	errStr := strings.ToLower(err.Error())
+	diskFullPatterns := []string{
+		"no space left on device",
+		"disk full",
+		"enospc",
+		"not enough space",
+		"insufficient disk space",
+		"out of disk space",
+	}
+
+	for _, pattern := range diskFullPatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// WrapDiskFullError wraps an error as a DiskFullError if it indicates disk full.
+// If the error is not a disk full error, it returns the original error unchanged.
+func WrapDiskFullError(err error, op, path string) error {
+	if err == nil {
+		return nil
+	}
+	if IsDiskFullError(err) {
+		return NewDiskFullError(op, path, err)
+	}
+	return err
 }
