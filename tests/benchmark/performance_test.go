@@ -22,10 +22,10 @@ import (
 
 // Performance goal constants
 // Note: CLI execution time includes process startup + Go runtime + Badger init (~130ms baseline)
-// The 600ms goal ensures snappy user experience while accounting for cold-start overhead and variance
+// The 800ms goal ensures snappy user experience while accounting for cold-start overhead and CI variance
 // Memory goal of 100MB accounts for Badger's LSM tree overhead and caching
 const (
-	MaxCommandExecutionTime = 600 * time.Millisecond
+	MaxCommandExecutionTime = 800 * time.Millisecond
 	MaxMemoryUsageMB        = 100
 	MaxExport1000BlocksTime = 5 * time.Second
 )

@@ -29,10 +29,11 @@ type ParsedArgs struct {
 
 // Keywords for natural language parsing.
 var (
-	projectKeywords = []string{"on", "to", "of"}
+	projectKeywords = []string{"on", "of", "to"}
 	noteKeyword     = "with"
-	endKeywords     = []string{"end", "ended", "until", "to"}
-	skipWords       = map[string]bool{
+	// Note: "to" is handled specially - it's an end keyword only when we already have a project
+	endKeywords = []string{"end", "ended", "until"}
+	skipWords   = map[string]bool{
 		"block": true, "working": true, "work": true, "all": true,
 		"at": true, "from": true, "note": true,
 	}
@@ -79,7 +80,20 @@ func Parse(args []string) *ParsedArgs {
 		}
 
 		// Check for project keywords
+		// Special case: "to" is only a project keyword if we don't have a project yet
 		if containsString(projectKeywords, tokenLower) {
+			if tokenLower == "to" && result.HasProject {
+				// "to" after a project is an end keyword, not project keyword
+				// Save any accumulated timestamp tokens as start
+				if len(timestampTokens) > 0 {
+					result.RawTimestampStart = strings.Join(timestampTokens, " ")
+					result.HasStart = true
+					timestampTokens = nil
+				}
+				isEndTimestamp = true
+				expectTimestamp = true
+				continue
+			}
 			expectProject = true
 			continue
 		}
@@ -254,26 +268,39 @@ func containsString(slice []string, s string) bool {
 
 // isTimeLike checks if a token looks like a time expression.
 func isTimeLike(token string) bool {
-	timeLikeWords := []string{
-		"now", "today", "yesterday", "tomorrow",
-		"hour", "hours", "minute", "minutes", "second", "seconds",
-		"day", "days", "week", "weeks", "month", "months", "year", "years",
-		"ago", "last", "this", "next", "previous", "current",
-		"am", "pm", "morning", "afternoon", "evening", "night",
-		"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-		"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+	// Exact match time words
+	timeLikeWords := map[string]bool{
+		"now": true, "today": true, "yesterday": true, "tomorrow": true,
+		"hour": true, "hours": true, "minute": true, "minutes": true, "second": true, "seconds": true,
+		"day": true, "days": true, "week": true, "weeks": true, "month": true, "months": true, "year": true, "years": true,
+		"ago": true, "last": true, "this": true, "next": true, "previous": true, "current": true,
+		"am": true, "pm": true, "morning": true, "afternoon": true, "evening": true, "night": true,
+		"monday": true, "tuesday": true, "wednesday": true, "thursday": true, "friday": true, "saturday": true, "sunday": true,
+		"jan": true, "feb": true, "mar": true, "apr": true, "may": true, "jun": true,
+		"jul": true, "aug": true, "sep": true, "oct": true, "nov": true, "dec": true,
+		"january": true, "february": true, "march": true, "april": true, "june": true,
+		"july": true, "august": true, "september": true, "october": true, "november": true, "december": true,
 	}
 
 	tokenLower := strings.ToLower(token)
-	for _, word := range timeLikeWords {
-		if tokenLower == word || strings.HasPrefix(tokenLower, word) {
-			return true
-		}
+
+	// Exact match
+	if timeLikeWords[tokenLower] {
+		return true
 	}
 
-	// Check if it's a number (could be time)
+	// Check for time patterns like "9am", "11pm", "14:30", "9:00am"
 	if len(token) > 0 && token[0] >= '0' && token[0] <= '9' {
-		return true
+		// Must end with am/pm or contain : (time format) to be considered time-like
+		if strings.HasSuffix(tokenLower, "am") || strings.HasSuffix(tokenLower, "pm") {
+			return true
+		}
+		if strings.Contains(token, ":") {
+			return true
+		}
+		// Pure numbers could be hours in "2 hours ago" context
+		// But NOT valid as standalone time after "on" keyword
+		// Only return true if it's clearly a time (handled above)
 	}
 
 	return false

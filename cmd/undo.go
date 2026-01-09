@@ -110,6 +110,19 @@ func undoStart(state *model.UndoState, cli *output.CLIFormatter) error {
 
 // undoStop undoes a stop action by reopening the block (removing end time).
 func undoStop(state *model.UndoState, cli *output.CLIFormatter) error {
+	// Check if there's already active tracking
+	existingActive, _ := ctx.ActiveBlockRepo.GetActiveBlock(ctx.BlockRepo)
+	if existingActive != nil {
+		if ctx.IsJSON() {
+			return ctx.Formatter.JSON(map[string]string{
+				"status":  "error",
+				"message": "Cannot undo stop: another block is already active",
+			})
+		}
+		cli.Muted("Cannot undo stop: another block is already active. Stop it first.")
+		return nil
+	}
+
 	// Get the block that was stopped
 	block, err := ctx.BlockRepo.Get(state.BlockKey)
 	if err != nil {
