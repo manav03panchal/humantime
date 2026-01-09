@@ -52,6 +52,10 @@ func init() {
 	exportCmd.Flags().BoolVarP(&exportFlagBackup, "backup", "b", false, "Full database backup")
 	exportCmd.Flags().StringVarP(&exportFlagOutput, "output", "o", "", "Output file (stdout if omitted)")
 
+	// Dynamic completion for projects/tasks
+	exportCmd.ValidArgsFunction = completeBlocksArgs
+	exportCmd.RegisterFlagCompletionFunc("project", completeProjects)
+
 	rootCmd.AddCommand(exportCmd)
 }
 

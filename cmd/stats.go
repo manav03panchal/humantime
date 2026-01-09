@@ -44,6 +44,10 @@ func init() {
 	statsCmd.Flags().StringVar(&statsFlagUntil, "until", "", "End of time range")
 	statsCmd.Flags().StringVarP(&statsFlagGroup, "group", "g", "auto", "Grouping: day, week, month, auto")
 
+	// Dynamic completion for projects/tasks
+	statsCmd.ValidArgsFunction = completeBlocksArgs
+	statsCmd.RegisterFlagCompletionFunc("project", completeProjects)
+
 	rootCmd.AddCommand(statsCmd)
 }
 

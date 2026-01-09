@@ -71,6 +71,11 @@ func init() {
 	goalSetCmd.Flags().StringVarP(&goalSetFlagDaily, "daily", "d", "", "Daily time goal (e.g., 4h, 2h30m)")
 	goalSetCmd.Flags().StringVarP(&goalSetFlagWeekly, "weekly", "w", "", "Weekly time goal (e.g., 20h, 40h)")
 
+	// Dynamic completion for projects
+	goalCmd.ValidArgsFunction = completeProjectArgs
+	goalSetCmd.ValidArgsFunction = completeProjectArgs
+	goalDeleteCmd.ValidArgsFunction = completeProjectArgs
+
 	goalCmd.AddCommand(goalSetCmd)
 	goalCmd.AddCommand(goalDeleteCmd)
 	rootCmd.AddCommand(goalCmd)

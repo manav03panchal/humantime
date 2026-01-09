@@ -69,6 +69,10 @@ func init() {
 	blocksCmd.Flags().StringVar(&blocksFlagUntil, "until", "", "End of time range")
 	blocksCmd.Flags().IntVarP(&blocksFlagLimit, "limit", "l", 50, "Maximum blocks to show")
 
+	// Dynamic completion for projects/tasks
+	blocksCmd.ValidArgsFunction = completeBlocksArgs
+	blocksCmd.RegisterFlagCompletionFunc("project", completeProjects)
+
 	// Edit flags
 	blocksEditCmd.Flags().StringVarP(&blocksEditFlagNote, "note", "n", "", "Update note")
 	blocksEditCmd.Flags().StringVarP(&blocksEditFlagStart, "start", "s", "", "Update start timestamp")

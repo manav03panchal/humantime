@@ -52,6 +52,29 @@ func init() {
 	startCmd.Flags().StringVarP(&startFlagStart, "start", "s", "", "Start timestamp")
 	startCmd.Flags().StringVarP(&startFlagEnd, "end", "e", "", "End timestamp (creates completed block)")
 
+	// Dynamic completion for projects/tasks
+	startCmd.ValidArgsFunction = completeStartArgs
+	startCmd.RegisterFlagCompletionFunc("project", completeProjects)
+	startCmd.RegisterFlagCompletionFunc("task", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Complete tasks for the current project
+		projectSID := startFlagProject
+		if projectSID == "" {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		if ctx == nil || ctx.TaskRepo == nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		tasks, err := ctx.TaskRepo.ListByProject(projectSID)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var completions []string
+		for _, t := range tasks {
+			completions = append(completions, t.SID+"\t"+t.DisplayName)
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	// Add resume as subcommand
 	startCmd.AddCommand(resumeCmd)
 }

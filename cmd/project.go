@@ -61,6 +61,10 @@ func init() {
 	projectEditCmd.Flags().StringVarP(&projectEditFlagName, "name", "n", "", "Update display name")
 	projectEditCmd.Flags().StringVarP(&projectEditFlagColor, "color", "c", "", "Update color")
 
+	// Dynamic completion for projects
+	projectCmd.ValidArgsFunction = completeProjectArgs
+	projectEditCmd.ValidArgsFunction = completeProjectArgs
+
 	projectCmd.AddCommand(projectCreateCmd)
 	projectCmd.AddCommand(projectEditCmd)
 	rootCmd.AddCommand(projectCmd)

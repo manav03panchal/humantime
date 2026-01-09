@@ -80,6 +80,13 @@ func init() {
 	taskEditCmd.Flags().StringVarP(&taskEditFlagName, "name", "n", "", "Update display name")
 	taskEditCmd.Flags().StringVarP(&taskEditFlagColor, "color", "c", "", "Update color")
 
+	// Dynamic completion for projects/tasks
+	taskCmd.ValidArgsFunction = completeTaskArgs
+	taskListCmd.ValidArgsFunction = completeProjectArgs
+	taskCreateCmd.ValidArgsFunction = completeProjectArgs
+	taskEditCmd.ValidArgsFunction = completeTaskArgs
+	taskDeleteCmd.ValidArgsFunction = completeTaskArgs
+
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskCreateCmd)
 	taskCmd.AddCommand(taskEditCmd)
