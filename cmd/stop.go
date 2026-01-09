@@ -81,6 +81,12 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Save undo state (save after update so we have the final state)
+	if err := ctx.UndoRepo.SaveUndoStop(block); err != nil {
+		// Non-fatal error
+		ctx.Debugf("Failed to save undo state: %v", err)
+	}
+
 	// Clear active tracking
 	if err := ctx.ActiveBlockRepo.ClearActive(); err != nil {
 		return err

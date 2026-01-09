@@ -21,6 +21,7 @@ var (
 	blocksFlagFrom    string
 	blocksFlagUntil   string
 	blocksFlagLimit   int
+	blocksFlagTag     string
 )
 
 // blocksCmd represents the blocks command.
@@ -62,6 +63,22 @@ var (
 	blocksEditFlagEnd   string
 )
 
+// Blocks delete flags.
+var blocksDeleteFlagForce bool
+
+// blocksDeleteCmd represents the blocks delete command.
+var blocksDeleteCmd = &cobra.Command{
+	Use:   "delete BLOCK_ID",
+	Short: "Delete a time block",
+	Long: `Delete a time block permanently. By default, prompts for confirmation.
+
+Examples:
+  humantime blocks delete abc123
+  humantime blocks delete abc123 --force`,
+	Args: cobra.ExactArgs(1),
+	RunE: runBlocksDelete,
+}
+
 func init() {
 	// List flags
 	blocksCmd.Flags().StringVarP(&blocksFlagProject, "project", "p", "", "Filter by project SID")
@@ -69,6 +86,7 @@ func init() {
 	blocksCmd.Flags().StringVar(&blocksFlagFrom, "from", "", "Start of time range")
 	blocksCmd.Flags().StringVar(&blocksFlagUntil, "until", "", "End of time range")
 	blocksCmd.Flags().IntVarP(&blocksFlagLimit, "limit", "l", 50, "Maximum blocks to show")
+	blocksCmd.Flags().StringVar(&blocksFlagTag, "tag", "", "Filter by tag")
 
 	// Dynamic completion for projects/tasks
 	blocksCmd.ValidArgsFunction = completeBlocksArgs
@@ -80,6 +98,11 @@ func init() {
 	blocksEditCmd.Flags().StringVarP(&blocksEditFlagEnd, "end", "e", "", "Update end timestamp")
 
 	blocksCmd.AddCommand(blocksEditCmd)
+
+	// Delete flags (using long form only to avoid conflict with global -f flag)
+	blocksDeleteCmd.Flags().BoolVar(&blocksDeleteFlagForce, "force", false, "Skip confirmation prompt")
+	blocksCmd.AddCommand(blocksDeleteCmd)
+
 	rootCmd.AddCommand(blocksCmd)
 }
 
@@ -102,6 +125,7 @@ func runBlocks(cmd *cobra.Command, args []string) error {
 	filter := storage.BlockFilter{
 		ProjectSID: parsed.ProjectSID,
 		TaskSID:    parsed.TaskSID,
+		Tag:        blocksFlagTag,
 		Limit:      blocksFlagLimit,
 	}
 
@@ -365,4 +389,95 @@ func joinArgs(args []string) string {
 		result += a
 	}
 	return result
+}
+
+func runBlocksDelete(cmd *cobra.Command, args []string) error {
+	blockID := args[0]
+
+	// Find the block
+	block, err := findBlockByID(blockID)
+	if err != nil {
+		return err
+	}
+	if block == nil {
+		return runtime.ErrBlockNotFound
+	}
+
+	// Confirm deletion unless --force is used
+	if !blocksDeleteFlagForce {
+		cli := ctx.CLIFormatter()
+		cli.Printf("Delete block for %s", cli.FormatProjectTask(block.ProjectSID, block.TaskSID))
+		if block.Note != "" {
+			cli.Printf(" (%s)", block.Note)
+		}
+		cli.Println("?")
+		cli.Printf("  Duration: %s\n", output.FormatDuration(block.Duration()))
+		cli.Printf("  Started: %s\n", output.FormatTime(block.TimestampStart))
+
+		// Prompt for confirmation
+		confirmed, err := promptConfirmation("Delete this block? (y/N): ")
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			cli.Muted("Cancelled")
+			return nil
+		}
+	}
+
+	// Save undo state before deleting
+	if err := ctx.UndoRepo.SaveUndoDelete(block); err != nil {
+		// Non-fatal error
+		ctx.Debugf("Failed to save undo state: %v", err)
+	}
+
+	// Delete the block
+	if err := ctx.BlockRepo.Delete(block.Key); err != nil {
+		return err
+	}
+
+	if ctx.IsJSON() {
+		return ctx.Formatter.JSON(map[string]string{
+			"status":  "deleted",
+			"block_key": block.Key,
+		})
+	}
+
+	ctx.CLIFormatter().Success("Block deleted")
+	return nil
+}
+
+// findBlockByID finds a block by full or partial ID.
+func findBlockByID(blockID string) (*model.Block, error) {
+	// Try full key first
+	key := "block:" + blockID
+	block, err := ctx.BlockRepo.Get(key)
+	if err == nil {
+		return block, nil
+	}
+
+	// Try partial match
+	blocks, err := ctx.BlockRepo.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range blocks {
+		if containsID(b.Key, blockID) {
+			return b, nil
+		}
+	}
+	return nil, nil
+}
+
+// promptConfirmation prompts the user for a yes/no confirmation.
+func promptConfirmation(prompt string) (bool, error) {
+	fmt.Print(prompt)
+	var response string
+	_, err := fmt.Scanln(&response)
+	if err != nil {
+		// Empty input (just Enter) means no
+		return false, nil
+	}
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes", nil
 }
