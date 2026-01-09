@@ -34,8 +34,8 @@ type testContext struct {
 	goalRepo        *storage.GoalRepo
 }
 
-// setupTestDB creates a new test context with an in-memory database.
-func setupTestDB(t *testing.T) *testContext {
+// setupExportTestDB creates a new test context with an in-memory database.
+func setupExportTestDB(t *testing.T) *testContext {
 	t.Helper()
 	db, err := storage.Open(storage.Options{InMemory: true})
 	require.NoError(t, err, "failed to open in-memory database")
@@ -274,7 +274,7 @@ func formatInt(n int64) string {
 // =============================================================================
 
 func TestExportJSON_EmptyDatabase(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	// Get all blocks (should be empty)
 	blocks, err := tc.blockRepo.List()
@@ -297,7 +297,7 @@ func TestExportJSON_EmptyDatabase(t *testing.T) {
 }
 
 func TestExportJSON_SingleBlock(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 	start := now.Add(-2 * time.Hour)
@@ -335,7 +335,7 @@ func TestExportJSON_SingleBlock(t *testing.T) {
 }
 
 func TestExportJSON_MultipleBlocks(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -375,7 +375,7 @@ func TestExportJSON_MultipleBlocks(t *testing.T) {
 }
 
 func TestExportJSON_ActiveBlock(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -406,7 +406,7 @@ func TestExportJSON_ActiveBlock(t *testing.T) {
 }
 
 func TestExportJSON_BlockWithSpecialCharactersInNote(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -436,7 +436,7 @@ func TestExportJSON_BlockWithSpecialCharactersInNote(t *testing.T) {
 // =============================================================================
 
 func TestExportCSV_EmptyDatabase(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	// Get all blocks (should be empty)
 	blocks, err := tc.blockRepo.List()
@@ -460,7 +460,7 @@ func TestExportCSV_EmptyDatabase(t *testing.T) {
 }
 
 func TestExportCSV_SingleBlock(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 	start := now.Add(-2 * time.Hour)
@@ -497,7 +497,7 @@ func TestExportCSV_SingleBlock(t *testing.T) {
 }
 
 func TestExportCSV_MultipleBlocks(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -537,7 +537,7 @@ func TestExportCSV_MultipleBlocks(t *testing.T) {
 }
 
 func TestExportCSV_ActiveBlock(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -565,7 +565,7 @@ func TestExportCSV_ActiveBlock(t *testing.T) {
 }
 
 func TestExportCSV_BlockWithCommasInNote(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -591,7 +591,7 @@ func TestExportCSV_BlockWithCommasInNote(t *testing.T) {
 }
 
 func TestExportCSV_HeaderFormat(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	// Get all blocks (empty)
 	blocks, err := tc.blockRepo.List()
@@ -612,7 +612,7 @@ func TestExportCSV_HeaderFormat(t *testing.T) {
 // =============================================================================
 
 func TestExportBackup_EmptyDatabase(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	// Get all data
 	config, err := tc.configRepo.Get()
@@ -653,7 +653,7 @@ func TestExportBackup_EmptyDatabase(t *testing.T) {
 }
 
 func TestExportBackup_WithAllDataTypes(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -731,7 +731,7 @@ func TestExportBackup_WithAllDataTypes(t *testing.T) {
 }
 
 func TestExportBackup_WithActiveBlock(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -781,7 +781,7 @@ func TestExportBackup_WithActiveBlock(t *testing.T) {
 // =============================================================================
 
 func TestExportFilterByProject_SingleProject(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -817,7 +817,7 @@ func TestExportFilterByProject_SingleProject(t *testing.T) {
 }
 
 func TestExportFilterByProject_NonExistentProject(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -845,7 +845,7 @@ func TestExportFilterByProject_NonExistentProject(t *testing.T) {
 }
 
 func TestExportFilterByTask(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -867,7 +867,7 @@ func TestExportFilterByTask(t *testing.T) {
 }
 
 func TestExportFilterByProjectAndTask(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -892,7 +892,7 @@ func TestExportFilterByProjectAndTask(t *testing.T) {
 // =============================================================================
 
 func TestExportFilterByTime_StartAfter(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -915,7 +915,7 @@ func TestExportFilterByTime_StartAfter(t *testing.T) {
 }
 
 func TestExportFilterByTime_EndBefore(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -935,7 +935,7 @@ func TestExportFilterByTime_EndBefore(t *testing.T) {
 }
 
 func TestExportFilterByTime_TimeRange(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -957,7 +957,7 @@ func TestExportFilterByTime_TimeRange(t *testing.T) {
 }
 
 func TestExportFilterByTime_CombinedWithProject(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -986,7 +986,7 @@ func TestExportFilterByTime_CombinedWithProject(t *testing.T) {
 // =============================================================================
 
 func TestExportJSON_TimestampFormat(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now().UTC()
 	start := now.Add(-1 * time.Hour)
@@ -1019,7 +1019,7 @@ func TestExportJSON_TimestampFormat(t *testing.T) {
 }
 
 func TestExportJSON_DurationCalculation(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 	start := now.Add(-90 * time.Minute) // 90 minutes = 5400 seconds
@@ -1048,7 +1048,7 @@ func TestExportJSON_DurationCalculation(t *testing.T) {
 }
 
 func TestExportCSV_TimestampFormat(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -1085,7 +1085,7 @@ func TestExportCSV_TimestampFormat(t *testing.T) {
 // =============================================================================
 
 func TestExportFiltered_SortedByStartTimeDescending(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 
@@ -1108,7 +1108,7 @@ func TestExportFiltered_SortedByStartTimeDescending(t *testing.T) {
 }
 
 func TestExportFiltered_LimitResults(t *testing.T) {
-	tc := setupTestDB(t)
+	tc := setupExportTestDB(t)
 
 	now := time.Now()
 

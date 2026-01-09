@@ -211,7 +211,7 @@ func runPomodoro(cmd *cobra.Command, args []string) error {
 	}
 
 	// Print summary
-	fmt.Println("\n")
+	fmt.Println()
 	state := pom.GetState()
 
 	if len(blocksCreated) > 0 {

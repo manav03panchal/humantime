@@ -7,7 +7,6 @@ import (
 
 	"github.com/adrg/xdg"
 	badger "github.com/dgraph-io/badger/v4"
-	"github.com/manav03panchal/humantime/internal/runtime"
 )
 
 const (
@@ -96,13 +95,4 @@ func (d *DB) Badger() *badger.DB {
 // Path returns the database path.
 func (d *DB) Path() string {
 	return d.path
-}
-
-// WrapError checks if an error is a disk full error and wraps it appropriately.
-// This should be called on errors returned from Badger write operations.
-func (d *DB) WrapError(err error, op string) error {
-	if err == nil {
-		return nil
-	}
-	return runtime.WrapDiskFullError(err, op, d.path)
 }
