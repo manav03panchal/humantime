@@ -303,3 +303,228 @@ func TestConstants(t *testing.T) {
 	assert.Equal(t, 128, MaxProjectNameLength)
 	assert.Equal(t, 4096, MaxNoteLength)
 }
+
+// =============================================================================
+// Sanitize Functions Tests
+// =============================================================================
+
+func TestSanitizeString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"empty", "", ""},
+		{"alphanumeric", "Hello123", "Hello123"},
+		{"with_spaces", "Hello World", "Hello World"},
+		{"with_allowed", "user@email.com", "user@email.com"},
+		{"with_special", "Hello<script>", "Helloscript"},
+		{"with_symbols", "Test!#$%", "Test"},
+		{"unicode", "Héllo", "Héllo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeString(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSanitizeProjectName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"normal", "My Project", "My Project"},
+		{"with_whitespace", "  My Project  ", "My Project"},
+		{"with_control", "My\x00Project", "MyProject"},
+		{"with_tab", "My\tProject", "MyProject"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeProjectName(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSanitizeNote(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"normal", "A note", "A note"},
+		{"with_whitespace", "  A note  ", "A note"},
+		{"with_null", "A\x00note", "Anote"},
+		{"with_crlf", "A\r\nnote", "A\nnote"},
+		{"with_cr", "A\rnote", "A\nnote"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeNote(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSanitizePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "file.txt", "file.txt"},
+		{"with_dir", "dir/file.txt", "dir/file.txt"},
+		{"with_traversal", "../file.txt", "file.txt"},
+		{"multiple_traversal", "../../dir/file.txt", "dir/file.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizePath(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsPathTraversal(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		isTraversal bool
+	}{
+		{"simple", "file.txt", false},
+		{"subdir", "dir/file.txt", false},
+		{"dot_dir", "./file.txt", false},
+		{"traversal", "../file.txt", true},
+		{"deep_traversal", "../../file.txt", true},
+		{"middle_traversal", "dir/../file.txt", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsPathTraversal(tt.path)
+			assert.Equal(t, tt.isTraversal, result)
+		})
+	}
+}
+
+func TestIsWithinDirectory(t *testing.T) {
+	// Use temp directory for testing
+	tmpDir := t.TempDir()
+
+	tests := []struct {
+		name     string
+		path     string
+		baseDir  string
+		expected bool
+	}{
+		{"within", tmpDir + "/subdir/file.txt", tmpDir, true},
+		{"same", tmpDir, tmpDir, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsWithinDirectory(tt.path, tt.baseDir)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSanitizeTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "mytag", "mytag"},
+		{"uppercase", "MyTag", "mytag"},
+		{"with_dash", "my-tag", "my-tag"},
+		{"with_space", " my tag ", "mytag"},
+		{"with_special", "my@tag!", "mytag"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizeTag(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestStripControlChars(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"normal", "Hello", "Hello"},
+		{"with_newline", "Hello\nWorld", "Hello\nWorld"},
+		{"with_tab", "Hello\tWorld", "Hello\tWorld"},
+		{"with_control", "Hello\x00World", "HelloWorld"},
+		{"with_bell", "Hello\x07World", "HelloWorld"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := StripControlChars(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestTruncateString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxLen   int
+		expected string
+	}{
+		{"short", "Hello", 10, "Hello"},
+		{"exact", "Hello", 5, "Hello"},
+		{"truncate", "Hello World", 8, "Hello..."},
+		{"very_short_limit", "Hello", 3, "Hel"},
+		{"short_limit", "Hello World", 4, "H..."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := TruncateString(tt.input, tt.maxLen)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSafeFilename(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"simple", "file.txt", "file.txt"},
+		{"with_slash", "path/file.txt", "path_file.txt"},
+		{"with_backslash", "path\\file.txt", "path_file.txt"},
+		{"with_special", "file:name?.txt", "file_name_.txt"},
+		{"with_dots", "...file...", "file"},
+		{"with_spaces", "  file  ", "file"},
+		{"with_null", "file\x00name", "filename"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SafeFilename(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestSafeFilenameLongInput(t *testing.T) {
+	longInput := strings.Repeat("a", 250)
+	result := SafeFilename(longInput)
+	assert.LessOrEqual(t, len(result), 200)
+}
