@@ -84,6 +84,50 @@ func TestRelativeTimeExpressions(t *testing.T) {
 		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 24*time.Hour,
 			"timestamp should be approximately 5 days ago")
 	})
+
+	t.Run("1 minute ago creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "project5", "", "", "1 minute ago")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		expectedTime := time.Now().Add(-1 * time.Minute)
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 30*time.Second,
+			"timestamp should be approximately 1 minute ago")
+	})
+
+	t.Run("5 minutes ago creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "project6", "", "", "5 minutes ago")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		expectedTime := time.Now().Add(-5 * time.Minute)
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 30*time.Second,
+			"timestamp should be approximately 5 minutes ago")
+	})
+
+	t.Run("in 5 minutes creates block with future timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "project7", "", "", "in 5 minutes")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		expectedTime := time.Now().Add(5 * time.Minute)
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 30*time.Second,
+			"timestamp should be approximately 5 minutes in the future")
+	})
+
+	t.Run("in 1 hour creates block with future timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "project8", "", "", "in 1 hour")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		expectedTime := time.Now().Add(1 * time.Hour)
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 2*time.Minute,
+			"timestamp should be approximately 1 hour in the future")
+	})
 }
 
 // =============================================================================
@@ -244,6 +288,270 @@ func TestTimeRangeExpressions(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "block should be found in time range query")
+	})
+}
+
+// =============================================================================
+// Day-Based Time Expression Tests
+// =============================================================================
+
+func TestDayBasedTimeExpressions(t *testing.T) {
+	db := setupTestDB(t)
+	blockRepo := storage.NewBlockRepo(db)
+	now := time.Now()
+
+	t.Run("yesterday at 3pm creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "day-project1", "", "", "yesterday at 3pm")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify the date is yesterday
+		expectedDate := now.AddDate(0, 0, -1)
+		assert.Equal(t, expectedDate.Year(), retrieved.TimestampStart.Year())
+		assert.Equal(t, expectedDate.Month(), retrieved.TimestampStart.Month())
+		assert.Equal(t, expectedDate.Day(), retrieved.TimestampStart.Day())
+
+		// Verify the time is 3pm (15:00)
+		assert.Equal(t, 15, retrieved.TimestampStart.Hour(), "hour should be 15 (3pm)")
+		assert.Equal(t, 0, retrieved.TimestampStart.Minute(), "minute should be 0")
+	})
+
+	t.Run("yesterday at 9:30am creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "day-project2", "", "", "yesterday at 9:30am")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify the date is yesterday
+		expectedDate := now.AddDate(0, 0, -1)
+		assert.Equal(t, expectedDate.Year(), retrieved.TimestampStart.Year())
+		assert.Equal(t, expectedDate.Month(), retrieved.TimestampStart.Month())
+		assert.Equal(t, expectedDate.Day(), retrieved.TimestampStart.Day())
+
+		// Verify the time is 9:30am
+		assert.Equal(t, 9, retrieved.TimestampStart.Hour(), "hour should be 9")
+		assert.Equal(t, 30, retrieved.TimestampStart.Minute(), "minute should be 30")
+	})
+
+	t.Run("tomorrow creates block with correct date", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "day-project3", "", "", "tomorrow")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify the date is tomorrow
+		expectedDate := now.AddDate(0, 0, 1)
+		assert.Equal(t, expectedDate.Year(), retrieved.TimestampStart.Year())
+		assert.Equal(t, expectedDate.Month(), retrieved.TimestampStart.Month())
+		assert.Equal(t, expectedDate.Day(), retrieved.TimestampStart.Day())
+	})
+
+	t.Run("tomorrow at 10am creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "day-project4", "", "", "tomorrow at 10am")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify the date is tomorrow
+		expectedDate := now.AddDate(0, 0, 1)
+		assert.Equal(t, expectedDate.Year(), retrieved.TimestampStart.Year())
+		assert.Equal(t, expectedDate.Month(), retrieved.TimestampStart.Month())
+		assert.Equal(t, expectedDate.Day(), retrieved.TimestampStart.Day())
+
+		// Verify the time is 10am
+		assert.Equal(t, 10, retrieved.TimestampStart.Hour(), "hour should be 10")
+		assert.Equal(t, 0, retrieved.TimestampStart.Minute(), "minute should be 0")
+	})
+
+	t.Run("tomorrow 5pm creates block with correct timestamp", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "day-project5", "", "", "tomorrow 5pm")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify the date is tomorrow
+		expectedDate := now.AddDate(0, 0, 1)
+		assert.Equal(t, expectedDate.Year(), retrieved.TimestampStart.Year())
+		assert.Equal(t, expectedDate.Month(), retrieved.TimestampStart.Month())
+		assert.Equal(t, expectedDate.Day(), retrieved.TimestampStart.Day())
+
+		// Verify the time is 5pm (17:00)
+		assert.Equal(t, 17, retrieved.TimestampStart.Hour(), "hour should be 17 (5pm)")
+	})
+}
+
+// =============================================================================
+// Weekday Time Expression Tests
+// =============================================================================
+
+func TestWeekdayTimeExpressions(t *testing.T) {
+	db := setupTestDB(t)
+	blockRepo := storage.NewBlockRepo(db)
+
+	t.Run("friday 5pm creates block with correct weekday and time", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "weekday-project1", "", "", "friday 5pm")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify it's a Friday
+		assert.Equal(t, time.Friday, retrieved.TimestampStart.Weekday(), "should be Friday")
+
+		// Verify the time is 5pm (17:00)
+		assert.Equal(t, 17, retrieved.TimestampStart.Hour(), "hour should be 17 (5pm)")
+		assert.Equal(t, 0, retrieved.TimestampStart.Minute(), "minute should be 0")
+	})
+
+	t.Run("monday 9am creates block with correct weekday and time", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "weekday-project2", "", "", "monday 9am")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify it's a Monday
+		assert.Equal(t, time.Monday, retrieved.TimestampStart.Weekday(), "should be Monday")
+
+		// Verify the time is 9am
+		assert.Equal(t, 9, retrieved.TimestampStart.Hour(), "hour should be 9")
+		assert.Equal(t, 0, retrieved.TimestampStart.Minute(), "minute should be 0")
+	})
+
+	t.Run("wednesday at 2:30pm creates block with correct weekday and time", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "weekday-project3", "", "", "wednesday at 2:30pm")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify it's a Wednesday
+		assert.Equal(t, time.Wednesday, retrieved.TimestampStart.Weekday(), "should be Wednesday")
+
+		// Verify the time is 2:30pm (14:30)
+		assert.Equal(t, 14, retrieved.TimestampStart.Hour(), "hour should be 14 (2pm)")
+		assert.Equal(t, 30, retrieved.TimestampStart.Minute(), "minute should be 30")
+	})
+
+	t.Run("next friday 3pm is not supported by parser", func(t *testing.T) {
+		// Note: "next friday 3pm" is not currently supported by go-dateparser
+		// This test documents this limitation for future enhancement
+		result := parser.ParseTimestamp("next friday 3pm")
+		assert.Error(t, result.Error, "next friday 3pm should not be supported currently")
+	})
+
+	t.Run("last saturday is not supported by parser", func(t *testing.T) {
+		// Note: "last saturday" is not currently supported by go-dateparser
+		// This test documents this limitation for future enhancement
+		result := parser.ParseTimestamp("last saturday")
+		assert.Error(t, result.Error, "last saturday should not be supported currently")
+	})
+
+	t.Run("sunday 8am creates block with correct weekday and time", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "weekday-project4", "", "", "sunday 8am")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify it's a Sunday
+		assert.Equal(t, time.Sunday, retrieved.TimestampStart.Weekday(), "should be Sunday")
+
+		// Verify the time is 8am
+		assert.Equal(t, 8, retrieved.TimestampStart.Hour(), "hour should be 8")
+		assert.Equal(t, 0, retrieved.TimestampStart.Minute(), "minute should be 0")
+	})
+
+	t.Run("thursday 6:15pm creates block with correct weekday and time", func(t *testing.T) {
+		block := createBlockWithNaturalLanguageTime(t, blockRepo, "user-1", "weekday-project5", "", "", "thursday 6:15pm")
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		// Verify it's a Thursday
+		assert.Equal(t, time.Thursday, retrieved.TimestampStart.Weekday(), "should be Thursday")
+
+		// Verify the time is 6:15pm (18:15)
+		assert.Equal(t, 18, retrieved.TimestampStart.Hour(), "hour should be 18 (6pm)")
+		assert.Equal(t, 15, retrieved.TimestampStart.Minute(), "minute should be 15")
+	})
+}
+
+// =============================================================================
+// Relative Duration Time Expression Tests
+// =============================================================================
+
+func TestRelativeDurationExpressions(t *testing.T) {
+	db := setupTestDB(t)
+	blockRepo := storage.NewBlockRepo(db)
+
+	t.Run("+1h30m creates block with duration offset from now", func(t *testing.T) {
+		// Parse the duration
+		durationResult := parser.ParseDuration("1h30m")
+		require.True(t, durationResult.Valid, "duration should be valid")
+
+		// Apply duration to current time
+		expectedTime := time.Now().Add(durationResult.Duration)
+
+		// Create block using the offset time
+		block := model.NewBlock("user-1", "duration-project1", "", "", expectedTime)
+		require.NoError(t, blockRepo.Create(block))
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 2*time.Second,
+			"timestamp should be approximately 1h30m from now")
+	})
+
+	t.Run("-2h creates block with negative duration offset", func(t *testing.T) {
+		// Parse the duration (negative for past)
+		durationResult := parser.ParseDuration("2h")
+		require.True(t, durationResult.Valid, "duration should be valid")
+
+		// Apply negative duration to current time
+		expectedTime := time.Now().Add(-durationResult.Duration)
+
+		// Create block using the offset time
+		block := model.NewBlock("user-1", "duration-project2", "", "", expectedTime)
+		require.NoError(t, blockRepo.Create(block))
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 2*time.Second,
+			"timestamp should be approximately 2h ago")
+	})
+
+	t.Run("+45m creates block with 45 minute offset", func(t *testing.T) {
+		durationResult := parser.ParseDuration("45m")
+		require.True(t, durationResult.Valid, "duration should be valid")
+
+		expectedTime := time.Now().Add(durationResult.Duration)
+
+		block := model.NewBlock("user-1", "duration-project3", "", "", expectedTime)
+		require.NoError(t, blockRepo.Create(block))
+
+		retrieved, err := blockRepo.Get(block.Key)
+		require.NoError(t, err)
+
+		assert.WithinDuration(t, expectedTime, retrieved.TimestampStart, 2*time.Second,
+			"timestamp should be approximately 45m from now")
+	})
+
+	t.Run("2h30m duration parsing is accurate", func(t *testing.T) {
+		durationResult := parser.ParseDuration("2h30m")
+		require.True(t, durationResult.Valid, "duration should be valid")
+
+		expectedDuration := 2*time.Hour + 30*time.Minute
+		assert.Equal(t, expectedDuration, durationResult.Duration,
+			"duration should be exactly 2h30m")
+	})
+
+	t.Run("duration with decimal hours works correctly", func(t *testing.T) {
+		durationResult := parser.ParseDuration("2.5h")
+		require.True(t, durationResult.Valid, "duration should be valid")
+
+		expectedDuration := 2*time.Hour + 30*time.Minute
+		assert.Equal(t, expectedDuration, durationResult.Duration,
+			"2.5h should equal 2h30m")
 	})
 }
 

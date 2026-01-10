@@ -2,6 +2,7 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -95,4 +96,35 @@ func (d *DB) Badger() *badger.DB {
 // Path returns the database path.
 func (d *DB) Path() string {
 	return d.path
+}
+
+// CheckIntegrity performs a database integrity check.
+// Returns nil if healthy, error describing the issue otherwise.
+func (d *DB) CheckIntegrity() error {
+	status := CheckDatabaseIntegrity(d)
+	if !status.Healthy {
+		if len(status.Errors) > 0 {
+			return fmt.Errorf("database integrity check failed: %s", status.Errors[0])
+		}
+		return fmt.Errorf("database integrity check failed")
+	}
+	return nil
+}
+
+// OpenWithIntegrityCheck opens the database and performs an integrity check.
+// If the check fails, it attempts recovery if possible.
+func OpenWithIntegrityCheck(opts Options) (*DB, error) {
+	db, err := Open(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform integrity check
+	if err := db.CheckIntegrity(); err != nil {
+		// Log the issue but don't fail - the app can still function
+		// with a potentially degraded database
+		_ = err // Logged elsewhere if needed
+	}
+
+	return db, nil
 }

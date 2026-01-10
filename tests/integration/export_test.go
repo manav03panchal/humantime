@@ -8,6 +8,7 @@ package integration
 import (
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1124,4 +1125,1209 @@ func TestExportFiltered_LimitResults(t *testing.T) {
 
 	// Should only have 5 blocks
 	assert.Len(t, blocks, 5)
+}
+
+// =============================================================================
+// JSON Import Tests
+// =============================================================================
+
+// importBlockOutput represents a block during import (same structure as export).
+type importBlockOutput struct {
+	Key             string `json:"key"`
+	ProjectSID      string `json:"project_sid"`
+	TaskSID         string `json:"task_sid,omitempty"`
+	Note            string `json:"note,omitempty"`
+	TimestampStart  string `json:"timestamp_start"`
+	TimestampEnd    string `json:"timestamp_end,omitempty"`
+	DurationSeconds int64  `json:"duration_seconds"`
+	IsActive        bool   `json:"is_active"`
+}
+
+// importFromJSON parses JSON export data and creates blocks in the database.
+func (tc *testContext) importFromJSON(jsonData string) (int, error) {
+	tc.t.Helper()
+
+	var export struct {
+		Version    string              `json:"version"`
+		ExportedAt string              `json:"exported_at"`
+		Blocks     []importBlockOutput `json:"blocks"`
+		Count      int                 `json:"count"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonData), &export); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	config, err := tc.configRepo.Get()
+	if err != nil {
+		return 0, err
+	}
+
+	imported := 0
+	for _, b := range export.Blocks {
+		// Parse timestamps
+		start, err := time.Parse(time.RFC3339, b.TimestampStart)
+		if err != nil {
+			return imported, fmt.Errorf("invalid start timestamp: %w", err)
+		}
+
+		var end time.Time
+		if b.TimestampEnd != "" {
+			end, err = time.Parse(time.RFC3339, b.TimestampEnd)
+			if err != nil {
+				return imported, fmt.Errorf("invalid end timestamp: %w", err)
+			}
+		}
+
+		// Ensure project exists
+		_, _, err = tc.projectRepo.GetOrCreate(b.ProjectSID, b.ProjectSID)
+		if err != nil {
+			return imported, err
+		}
+
+		// Ensure task exists if specified
+		if b.TaskSID != "" {
+			_, _, err = tc.taskRepo.GetOrCreate(b.ProjectSID, b.TaskSID, b.TaskSID)
+			if err != nil {
+				return imported, err
+			}
+		}
+
+		// Create block
+		block := model.NewBlock(config.UserKey, b.ProjectSID, b.TaskSID, b.Note, start)
+		if !end.IsZero() {
+			block.TimestampEnd = end
+		}
+
+		if err := tc.blockRepo.Create(block); err != nil {
+			return imported, err
+		}
+		imported++
+	}
+
+	return imported, nil
+}
+
+// importFromBackupJSON parses backup JSON data and imports all entities.
+func (tc *testContext) importFromBackupJSON(jsonData string, force bool) (*importStats, error) {
+	tc.t.Helper()
+
+	var backup jsonBackup
+	if err := json.Unmarshal([]byte(jsonData), &backup); err != nil {
+		return nil, fmt.Errorf("failed to parse backup: %w", err)
+	}
+
+	stats := &importStats{}
+
+	// Import projects
+	for _, p := range backup.Projects {
+		exists, _ := tc.projectRepo.Exists(p.SID)
+		if exists && !force {
+			stats.Duplicates++
+			continue
+		}
+
+		if exists {
+			if err := tc.projectRepo.Update(p); err != nil {
+				return stats, err
+			}
+		} else {
+			if err := tc.projectRepo.Create(p); err != nil {
+				return stats, err
+			}
+		}
+		stats.Projects++
+	}
+
+	// Import tasks
+	for _, t := range backup.Tasks {
+		exists, _ := tc.taskRepo.Exists(t.ProjectSID, t.SID)
+		if exists && !force {
+			stats.Duplicates++
+			continue
+		}
+
+		if exists {
+			if err := tc.taskRepo.Update(t); err != nil {
+				return stats, err
+			}
+		} else {
+			if err := tc.taskRepo.Create(t); err != nil {
+				return stats, err
+			}
+		}
+		stats.Tasks++
+	}
+
+	// Import blocks
+	for _, b := range backup.Blocks {
+		_, err := tc.blockRepo.Get(b.Key)
+		if err == nil && !force {
+			stats.Duplicates++
+			continue
+		}
+
+		if err == nil {
+			if err := tc.blockRepo.Update(b); err != nil {
+				return stats, err
+			}
+		} else {
+			if err := tc.blockRepo.Create(b); err != nil {
+				return stats, err
+			}
+		}
+		stats.Blocks++
+	}
+
+	// Import goals
+	for _, g := range backup.Goals {
+		exists, _ := tc.goalRepo.Exists(g.ProjectSID)
+		if exists && !force {
+			stats.Duplicates++
+			continue
+		}
+
+		if err := tc.goalRepo.Upsert(g); err != nil {
+			return stats, err
+		}
+		stats.Goals++
+	}
+
+	return stats, nil
+}
+
+type importStats struct {
+	Projects   int
+	Tasks      int
+	Blocks     int
+	Goals      int
+	Duplicates int
+	Errors     int
+}
+
+func TestImportJSON_EmptyExport(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Create an empty export JSON
+	emptyExport := `{"version":"1","exported_at":"2024-01-01T00:00:00Z","blocks":[],"count":0}`
+
+	// Import
+	imported, err := tc.importFromJSON(emptyExport)
+	require.NoError(t, err)
+	assert.Equal(t, 0, imported)
+
+	// Verify database is still empty
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	assert.Empty(t, blocks)
+}
+
+func TestImportJSON_SingleBlock(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-2 * time.Hour)
+	end := now.Add(-1 * time.Hour)
+
+	// Create export JSON with a single block
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:test-key-1",
+			"project_sid": "project1",
+			"task_sid": "task1",
+			"note": "test note",
+			"timestamp_start": "%s",
+			"timestamp_end": "%s",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	// Import
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify block was created
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	block := blocks[0]
+	assert.Equal(t, "project1", block.ProjectSID)
+	assert.Equal(t, "task1", block.TaskSID)
+	assert.Equal(t, "test note", block.Note)
+}
+
+func TestImportJSON_MultipleBlocks(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+
+	// Create export JSON with multiple blocks
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [
+			{
+				"key": "block:test-key-1",
+				"project_sid": "project1",
+				"task_sid": "task1",
+				"note": "note 1",
+				"timestamp_start": "%s",
+				"timestamp_end": "%s",
+				"duration_seconds": 3600,
+				"is_active": false
+			},
+			{
+				"key": "block:test-key-2",
+				"project_sid": "project1",
+				"task_sid": "task2",
+				"note": "note 2",
+				"timestamp_start": "%s",
+				"timestamp_end": "%s",
+				"duration_seconds": 3600,
+				"is_active": false
+			},
+			{
+				"key": "block:test-key-3",
+				"project_sid": "project2",
+				"task_sid": "",
+				"note": "note 3",
+				"timestamp_start": "%s",
+				"timestamp_end": "%s",
+				"duration_seconds": 3600,
+				"is_active": false
+			}
+		],
+		"count": 3
+	}`,
+		now.Format(time.RFC3339),
+		now.Add(-4*time.Hour).Format(time.RFC3339), now.Add(-3*time.Hour).Format(time.RFC3339),
+		now.Add(-3*time.Hour).Format(time.RFC3339), now.Add(-2*time.Hour).Format(time.RFC3339),
+		now.Add(-2*time.Hour).Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
+
+	// Import
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 3, imported)
+
+	// Verify blocks were created
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, blocks, 3)
+
+	// Verify projects were created
+	projects, err := tc.projectRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, projects, 2) // project1 and project2
+}
+
+func TestImportJSON_ActiveBlock(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-30 * time.Minute)
+
+	// Create export JSON with an active block (no end time)
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:active-key",
+			"project_sid": "project1",
+			"note": "active work",
+			"timestamp_start": "%s",
+			"duration_seconds": 1800,
+			"is_active": true
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), start.Format(time.RFC3339))
+
+	// Import
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify block was created as active
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	block := blocks[0]
+	assert.True(t, block.IsActive())
+	assert.Equal(t, "active work", block.Note)
+}
+
+func TestImportJSON_BlockWithSpecialCharacters(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-1 * time.Hour)
+	end := now
+
+	// Create export JSON with special characters in note
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:special-key",
+			"project_sid": "project1",
+			"note": "Test with \"quotes\", 'apostrophes', and\nnewlines",
+			"timestamp_start": "%s",
+			"timestamp_end": "%s",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	// Import
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify special characters preserved
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	assert.Equal(t, "Test with \"quotes\", 'apostrophes', and\nnewlines", blocks[0].Note)
+}
+
+// =============================================================================
+// CSV Import Tests
+// =============================================================================
+
+// importFromCSV parses CSV data and creates blocks in the database.
+func (tc *testContext) importFromCSV(csvData string) (int, error) {
+	tc.t.Helper()
+
+	reader := csv.NewReader(strings.NewReader(csvData))
+	records, err := reader.ReadAll()
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse CSV: %w", err)
+	}
+
+	if len(records) == 0 {
+		return 0, nil
+	}
+
+	// Skip header
+	if len(records) > 0 && records[0][0] == "key" {
+		records = records[1:]
+	}
+
+	config, err := tc.configRepo.Get()
+	if err != nil {
+		return 0, err
+	}
+
+	imported := 0
+	for _, row := range records {
+		if len(row) < 7 {
+			continue
+		}
+
+		projectSID := row[1]
+		taskSID := row[2]
+		note := row[3]
+		startStr := row[4]
+		endStr := row[5]
+
+		// Parse timestamps
+		start, err := time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			return imported, fmt.Errorf("invalid start timestamp: %w", err)
+		}
+
+		var end time.Time
+		if endStr != "" {
+			end, err = time.Parse(time.RFC3339, endStr)
+			if err != nil {
+				return imported, fmt.Errorf("invalid end timestamp: %w", err)
+			}
+		}
+
+		// Ensure project exists
+		_, _, err = tc.projectRepo.GetOrCreate(projectSID, projectSID)
+		if err != nil {
+			return imported, err
+		}
+
+		// Ensure task exists if specified
+		if taskSID != "" {
+			_, _, err = tc.taskRepo.GetOrCreate(projectSID, taskSID, taskSID)
+			if err != nil {
+				return imported, err
+			}
+		}
+
+		// Create block
+		block := model.NewBlock(config.UserKey, projectSID, taskSID, note, start)
+		if !end.IsZero() {
+			block.TimestampEnd = end
+		}
+
+		if err := tc.blockRepo.Create(block); err != nil {
+			return imported, err
+		}
+		imported++
+	}
+
+	return imported, nil
+}
+
+func TestImportCSV_EmptyFile(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// CSV with only header
+	csvData := "key,project,task,note,start,end,duration_seconds\n"
+
+	imported, err := tc.importFromCSV(csvData)
+	require.NoError(t, err)
+	assert.Equal(t, 0, imported)
+
+	// Verify database is empty
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	assert.Empty(t, blocks)
+}
+
+func TestImportCSV_SingleBlock(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-2 * time.Hour)
+	end := now.Add(-1 * time.Hour)
+
+	csvData := fmt.Sprintf(`key,project,task,note,start,end,duration_seconds
+block:csv-key-1,project1,task1,test note,%s,%s,3600
+`, start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	imported, err := tc.importFromCSV(csvData)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify block was created
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	block := blocks[0]
+	assert.Equal(t, "project1", block.ProjectSID)
+	assert.Equal(t, "task1", block.TaskSID)
+	assert.Equal(t, "test note", block.Note)
+}
+
+func TestImportCSV_MultipleBlocks(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+
+	csvData := fmt.Sprintf(`key,project,task,note,start,end,duration_seconds
+block:csv-key-1,project1,task1,note 1,%s,%s,3600
+block:csv-key-2,project1,task2,note 2,%s,%s,3600
+block:csv-key-3,project2,,note 3,%s,%s,3600
+`,
+		now.Add(-4*time.Hour).Format(time.RFC3339), now.Add(-3*time.Hour).Format(time.RFC3339),
+		now.Add(-3*time.Hour).Format(time.RFC3339), now.Add(-2*time.Hour).Format(time.RFC3339),
+		now.Add(-2*time.Hour).Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
+
+	imported, err := tc.importFromCSV(csvData)
+	require.NoError(t, err)
+	assert.Equal(t, 3, imported)
+
+	// Verify blocks were created
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, blocks, 3)
+}
+
+func TestImportCSV_ActiveBlock(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-30 * time.Minute)
+
+	// Empty end time indicates active block
+	csvData := fmt.Sprintf(`key,project,task,note,start,end,duration_seconds
+block:csv-active,project1,,active work,%s,,1800
+`, start.Format(time.RFC3339))
+
+	imported, err := tc.importFromCSV(csvData)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify block is active
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	assert.True(t, blocks[0].IsActive())
+}
+
+// =============================================================================
+// Data Integrity Round-Trip Tests
+// =============================================================================
+
+func TestRoundTrip_JSONExportImport_SingleBlock(t *testing.T) {
+	// Create first database with test data
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+	start := now.Add(-2 * time.Hour)
+	end := now.Add(-1 * time.Hour)
+
+	// Create original block
+	originalBlock := tc1.createTestBlock("project1", "task1", "round-trip test", start, end)
+
+	// Export to JSON
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+
+	jsonStr, err := exportBlocksToJSON(blocks)
+	require.NoError(t, err)
+
+	// Create second database and import
+	tc2 := setupExportTestDB(t)
+
+	imported, err := tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify data integrity
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, importedBlocks, 1)
+
+	importedBlock := importedBlocks[0]
+
+	// Verify all fields match (key will be different)
+	assert.Equal(t, originalBlock.ProjectSID, importedBlock.ProjectSID)
+	assert.Equal(t, originalBlock.TaskSID, importedBlock.TaskSID)
+	assert.Equal(t, originalBlock.Note, importedBlock.Note)
+
+	// Timestamps should be within 1 second (accounting for serialization precision)
+	assert.WithinDuration(t, originalBlock.TimestampStart, importedBlock.TimestampStart, 1*time.Second)
+	assert.WithinDuration(t, originalBlock.TimestampEnd, importedBlock.TimestampEnd, 1*time.Second)
+}
+
+func TestRoundTrip_JSONExportImport_MultipleBlocks(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// Create multiple blocks with diverse data
+	blocks := []*model.Block{
+		tc1.createTestBlock("project1", "task1", "note 1", now.Add(-4*time.Hour), now.Add(-3*time.Hour)),
+		tc1.createTestBlock("project1", "task2", "note 2", now.Add(-3*time.Hour), now.Add(-2*time.Hour)),
+		tc1.createTestBlock("project2", "", "note 3", now.Add(-2*time.Hour), now.Add(-1*time.Hour)),
+		tc1.createTestBlock("project3", "task3", "unicode: \u4e2d\u6587", now.Add(-1*time.Hour), now),
+	}
+
+	// Export to JSON
+	allBlocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, allBlocks, 4)
+
+	jsonStr, err := exportBlocksToJSON(allBlocks)
+	require.NoError(t, err)
+
+	// Create second database and import
+	tc2 := setupExportTestDB(t)
+
+	imported, err := tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+	assert.Equal(t, 4, imported)
+
+	// Verify all blocks were imported
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedBlocks, 4)
+
+	// Verify projects were created
+	projects, err := tc2.projectRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, projects, 3) // project1, project2, project3
+
+	// Verify unicode data preserved
+	var unicodeBlock *model.Block
+	for _, b := range importedBlocks {
+		if strings.Contains(b.Note, "unicode") {
+			unicodeBlock = b
+			break
+		}
+	}
+	require.NotNil(t, unicodeBlock)
+	assert.Equal(t, "unicode: \u4e2d\u6587", unicodeBlock.Note)
+
+	// Verify original blocks match
+	for _, original := range blocks {
+		found := false
+		for _, imported := range importedBlocks {
+			if imported.ProjectSID == original.ProjectSID &&
+				imported.TaskSID == original.TaskSID &&
+				imported.Note == original.Note {
+				found = true
+				assert.WithinDuration(t, original.TimestampStart, imported.TimestampStart, 1*time.Second)
+				assert.WithinDuration(t, original.TimestampEnd, imported.TimestampEnd, 1*time.Second)
+				break
+			}
+		}
+		assert.True(t, found, "Block with note '%s' should be found after import", original.Note)
+	}
+}
+
+func TestRoundTrip_CSVExportImport(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// Create test blocks
+	tc1.createTestBlock("project1", "task1", "csv test 1", now.Add(-2*time.Hour), now.Add(-1*time.Hour))
+	tc1.createTestBlock("project1", "", "csv test 2", now.Add(-1*time.Hour), now)
+
+	// Export to CSV
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	csvStr, err := exportBlocksToCSV(blocks)
+	require.NoError(t, err)
+
+	// Create second database and import
+	tc2 := setupExportTestDB(t)
+
+	imported, err := tc2.importFromCSV(csvStr)
+	require.NoError(t, err)
+	assert.Equal(t, 2, imported)
+
+	// Verify data integrity
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedBlocks, 2)
+
+	// Verify content matches
+	projectCounts := make(map[string]int)
+	for _, b := range importedBlocks {
+		projectCounts[b.ProjectSID]++
+		assert.Contains(t, b.Note, "csv test")
+	}
+	assert.Equal(t, 2, projectCounts["project1"])
+}
+
+func TestRoundTrip_BackupExportImport(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// Create comprehensive test data
+	tc1.createTestProject("project1", "Project One", "#FF0000")
+	tc1.createTestProject("project2", "Project Two", "#00FF00")
+	tc1.createTestTask("project1", "task1", "Task One", "#0000FF")
+	tc1.createTestTask("project1", "task2", "Task Two", "#FFFF00")
+	tc1.createTestBlock("project1", "task1", "backup test 1", now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+	tc1.createTestBlock("project2", "", "backup test 2", now.Add(-2*time.Hour), now.Add(-1*time.Hour))
+	tc1.createTestGoal("project1", model.GoalTypeDaily, 8*time.Hour)
+	tc1.createTestGoal("project2", model.GoalTypeWeekly, 40*time.Hour)
+
+	// Get all data for backup
+	config, err := tc1.configRepo.Get()
+	require.NoError(t, err)
+
+	projects, err := tc1.projectRepo.List()
+	require.NoError(t, err)
+
+	tasks, err := tc1.taskRepo.List()
+	require.NoError(t, err)
+
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	goals, err := tc1.goalRepo.List()
+	require.NoError(t, err)
+
+	activeBlock, err := tc1.activeBlockRepo.Get()
+	require.NoError(t, err)
+
+	// Export to backup JSON
+	backupJSON, err := exportBackupToJSON(config, projects, tasks, blocks, goals, activeBlock)
+	require.NoError(t, err)
+
+	// Create second database and import
+	tc2 := setupExportTestDB(t)
+
+	stats, err := tc2.importFromBackupJSON(backupJSON, false)
+	require.NoError(t, err)
+
+	// Verify import counts
+	assert.Equal(t, 2, stats.Projects)
+	assert.Equal(t, 2, stats.Tasks)
+	assert.Equal(t, 2, stats.Blocks)
+	assert.Equal(t, 2, stats.Goals)
+
+	// Verify projects
+	importedProjects, err := tc2.projectRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedProjects, 2)
+
+	projectMap := make(map[string]*model.Project)
+	for _, p := range importedProjects {
+		projectMap[p.SID] = p
+	}
+	assert.NotNil(t, projectMap["project1"])
+	assert.Equal(t, "Project One", projectMap["project1"].DisplayName)
+	assert.Equal(t, "#FF0000", projectMap["project1"].Color)
+
+	// Verify tasks
+	importedTasks, err := tc2.taskRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedTasks, 2)
+
+	// Verify blocks
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedBlocks, 2)
+
+	// Verify goals
+	importedGoals, err := tc2.goalRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, importedGoals, 2)
+}
+
+func TestRoundTrip_DurationPreserved(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+	start := now.Add(-90 * time.Minute) // 90 minutes = 5400 seconds
+	end := now
+
+	// Create block with specific duration
+	tc1.createTestBlock("project1", "", "duration test", start, end)
+
+	// Export to JSON
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	jsonStr, err := exportBlocksToJSON(blocks)
+	require.NoError(t, err)
+
+	// Import to new database
+	tc2 := setupExportTestDB(t)
+
+	_, err = tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+
+	// Verify duration is preserved
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, importedBlocks, 1)
+
+	// Duration should be approximately 5400 seconds (90 minutes)
+	assert.InDelta(t, 5400, importedBlocks[0].DurationSeconds(), 10)
+}
+
+func TestRoundTrip_TimezoneHandling(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	// Create block with specific timezone
+	loc, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+
+	now := time.Now().In(loc)
+	start := now.Add(-1 * time.Hour)
+	end := now
+
+	tc1.createTestBlock("project1", "", "timezone test", start, end)
+
+	// Export to JSON
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	jsonStr, err := exportBlocksToJSON(blocks)
+	require.NoError(t, err)
+
+	// Import to new database
+	tc2 := setupExportTestDB(t)
+
+	_, err = tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+
+	// Verify timestamps are correctly preserved (in UTC)
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, importedBlocks, 1)
+
+	// Timestamps should be equivalent (within 1 second tolerance)
+	assert.WithinDuration(t, start, importedBlocks[0].TimestampStart, 1*time.Second)
+	assert.WithinDuration(t, end, importedBlocks[0].TimestampEnd, 1*time.Second)
+}
+
+// =============================================================================
+// Error Handling for Invalid Import Data
+// =============================================================================
+
+func TestImportJSON_InvalidJSON(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Invalid JSON syntax
+	invalidJSON := `{"version": "1", "blocks": [broken json`
+
+	_, err := tc.importFromJSON(invalidJSON)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse JSON")
+}
+
+func TestImportJSON_InvalidTimestamp(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Invalid timestamp format
+	invalidTimestamp := `{
+		"version": "1",
+		"exported_at": "2024-01-01T00:00:00Z",
+		"blocks": [{
+			"key": "block:test",
+			"project_sid": "project1",
+			"timestamp_start": "not-a-valid-timestamp",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`
+
+	_, err := tc.importFromJSON(invalidTimestamp)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid start timestamp")
+}
+
+func TestImportJSON_InvalidEndTimestamp(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+
+	// Invalid end timestamp format
+	invalidEndTimestamp := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:test",
+			"project_sid": "project1",
+			"timestamp_start": "%s",
+			"timestamp_end": "invalid-end-timestamp",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
+
+	_, err := tc.importFromJSON(invalidEndTimestamp)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid end timestamp")
+}
+
+func TestImportJSON_MissingRequiredFields(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Missing project_sid (though import will create empty project)
+	now := time.Now().UTC()
+
+	missingProject := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:test",
+			"project_sid": "",
+			"timestamp_start": "%s",
+			"duration_seconds": 0,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), now.Add(-1*time.Hour).Format(time.RFC3339))
+
+	// This should succeed but create a block with empty project
+	imported, err := tc.importFromJSON(missingProject)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	assert.Len(t, blocks, 1)
+	assert.Equal(t, "", blocks[0].ProjectSID)
+}
+
+func TestImportCSV_InvalidCSV(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Malformed CSV (wrong number of columns) - CSV parser will return error
+	invalidCSV := `key,project,task,note,start,end,duration_seconds
+block:test,project1,task1`
+
+	_, err := tc.importFromCSV(invalidCSV)
+	// CSV parser returns an error for wrong number of fields
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse CSV")
+}
+
+func TestImportCSV_InvalidTimestamp(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Invalid timestamp in CSV
+	invalidCSV := `key,project,task,note,start,end,duration_seconds
+block:test,project1,task1,note,invalid-timestamp,,3600`
+
+	_, err := tc.importFromCSV(invalidCSV)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid start timestamp")
+}
+
+func TestImportJSON_EmptyBlocksArray(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// Valid JSON with empty blocks array
+	emptyBlocks := `{
+		"version": "1",
+		"exported_at": "2024-01-01T00:00:00Z",
+		"blocks": [],
+		"count": 0
+	}`
+
+	imported, err := tc.importFromJSON(emptyBlocks)
+	require.NoError(t, err)
+	assert.Equal(t, 0, imported)
+}
+
+func TestImportJSON_NullBlocks(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	// JSON with null blocks
+	nullBlocks := `{
+		"version": "1",
+		"exported_at": "2024-01-01T00:00:00Z",
+		"blocks": null,
+		"count": 0
+	}`
+
+	imported, err := tc.importFromJSON(nullBlocks)
+	require.NoError(t, err)
+	assert.Equal(t, 0, imported)
+}
+
+func TestImportBackup_DuplicateHandling_NoDuplicates(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// First import
+	backupJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"config": null,
+		"projects": [{"sid": "project1", "display_name": "Project One", "color": "#FF0000"}],
+		"tasks": [{"project_sid": "project1", "sid": "task1", "display_name": "Task One", "color": ""}],
+		"blocks": [],
+		"goals": [{"project_sid": "project1", "type": "daily", "target": 28800000000000}],
+		"active_block": null
+	}`, now.Format(time.RFC3339))
+
+	stats, err := tc.importFromBackupJSON(backupJSON, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Projects)
+	assert.Equal(t, 1, stats.Tasks)
+	assert.Equal(t, 1, stats.Goals)
+
+	// Second import - should skip duplicates
+	stats2, err := tc.importFromBackupJSON(backupJSON, false)
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats2.Projects) // Skipped
+	assert.Equal(t, 0, stats2.Tasks)    // Skipped
+	assert.Equal(t, 0, stats2.Goals)    // Skipped
+	assert.Equal(t, 3, stats2.Duplicates)
+}
+
+func TestImportBackup_DuplicateHandling_WithForce(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// First import - include key fields required by the storage layer
+	backupJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"config": null,
+		"projects": [{"key": "project:project1", "sid": "project1", "display_name": "Project One", "color": "#FF0000"}],
+		"tasks": [{"key": "task:project1:task1", "project_sid": "project1", "sid": "task1", "display_name": "Task One", "color": ""}],
+		"blocks": [],
+		"goals": [{"key": "goal:project1", "project_sid": "project1", "type": "daily", "target": 28800000000000}],
+		"active_block": null
+	}`, now.Format(time.RFC3339))
+
+	_, err := tc.importFromBackupJSON(backupJSON, false)
+	require.NoError(t, err)
+
+	// Second import with force - should update
+	updatedBackupJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"config": null,
+		"projects": [{"key": "project:project1", "sid": "project1", "display_name": "Updated Project", "color": "#00FF00"}],
+		"tasks": [{"key": "task:project1:task1", "project_sid": "project1", "sid": "task1", "display_name": "Updated Task", "color": "#BLUE"}],
+		"blocks": [],
+		"goals": [{"key": "goal:project1", "project_sid": "project1", "type": "weekly", "target": 144000000000000}],
+		"active_block": null
+	}`, now.Format(time.RFC3339))
+
+	stats, err := tc.importFromBackupJSON(updatedBackupJSON, true) // force = true
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Projects)
+	assert.Equal(t, 1, stats.Tasks)
+	assert.Equal(t, 1, stats.Goals)
+	assert.Equal(t, 0, stats.Duplicates)
+
+	// Verify data was updated
+	projects, err := tc.projectRepo.List()
+	require.NoError(t, err)
+	require.Len(t, projects, 1)
+	assert.Equal(t, "Updated Project", projects[0].DisplayName)
+	assert.Equal(t, "#00FF00", projects[0].Color)
+}
+
+func TestImportBackup_InvalidJSON(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	invalidJSON := `{"version": "1", broken`
+
+	_, err := tc.importFromBackupJSON(invalidJSON, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse backup")
+}
+
+func TestImportJSON_VeryLongNote(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-1 * time.Hour)
+	end := now
+
+	// Create a very long note (test max length handling)
+	longNote := strings.Repeat("a", 10000)
+
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:long-note",
+			"project_sid": "project1",
+			"note": "%s",
+			"timestamp_start": "%s",
+			"timestamp_end": "%s",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), longNote, start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify the long note was preserved
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, longNote, blocks[0].Note)
+}
+
+func TestImportJSON_UnicodeProjectAndTask(t *testing.T) {
+	tc := setupExportTestDB(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-1 * time.Hour)
+	end := now
+
+	// Unicode characters in project and task SIDs
+	exportJSON := fmt.Sprintf(`{
+		"version": "1",
+		"exported_at": "%s",
+		"blocks": [{
+			"key": "block:unicode",
+			"project_sid": "proyecto-espanol",
+			"task_sid": "tarea-uno",
+			"note": "Nota con caracteres especiales",
+			"timestamp_start": "%s",
+			"timestamp_end": "%s",
+			"duration_seconds": 3600,
+			"is_active": false
+		}],
+		"count": 1
+	}`, now.Format(time.RFC3339), start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	imported, err := tc.importFromJSON(exportJSON)
+	require.NoError(t, err)
+	assert.Equal(t, 1, imported)
+
+	// Verify the unicode data was preserved
+	blocks, err := tc.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, "proyecto-espanol", blocks[0].ProjectSID)
+	assert.Equal(t, "tarea-uno", blocks[0].TaskSID)
+}
+
+func TestExportImport_EmptyNote(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// Create block with empty note
+	tc1.createTestBlock("project1", "", "", now.Add(-1*time.Hour), now)
+
+	// Export
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	jsonStr, err := exportBlocksToJSON(blocks)
+	require.NoError(t, err)
+
+	// Import to new database
+	tc2 := setupExportTestDB(t)
+
+	_, err = tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+
+	// Verify empty note preserved
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, importedBlocks, 1)
+	assert.Equal(t, "", importedBlocks[0].Note)
+}
+
+func TestExportImport_EmptyTask(t *testing.T) {
+	tc1 := setupExportTestDB(t)
+
+	now := time.Now()
+
+	// Create block with no task
+	tc1.createTestBlock("project1", "", "no task block", now.Add(-1*time.Hour), now)
+
+	// Export
+	blocks, err := tc1.blockRepo.List()
+	require.NoError(t, err)
+
+	jsonStr, err := exportBlocksToJSON(blocks)
+	require.NoError(t, err)
+
+	// Import to new database
+	tc2 := setupExportTestDB(t)
+
+	_, err = tc2.importFromJSON(jsonStr)
+	require.NoError(t, err)
+
+	// Verify empty task preserved
+	importedBlocks, err := tc2.blockRepo.List()
+	require.NoError(t, err)
+	require.Len(t, importedBlocks, 1)
+	assert.Equal(t, "", importedBlocks[0].TaskSID)
 }
