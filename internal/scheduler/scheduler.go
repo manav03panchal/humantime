@@ -13,12 +13,16 @@ import (
 
 // Scheduler manages scheduled tasks using cron.
 type Scheduler struct {
-	cron            *cron.Cron
-	db              *storage.DB
-	debug           bool
-	lastCheck       time.Time
-	mu              sync.Mutex
-	reminderChecker *ReminderChecker
+	cron             *cron.Cron
+	db               *storage.DB
+	debug            bool
+	lastCheck        time.Time
+	mu               sync.Mutex
+	reminderChecker  *ReminderChecker
+	idleChecker      *IdleChecker
+	breakChecker     *BreakChecker
+	goalChecker      *GoalChecker
+	summaryGenerator *SummaryGenerator
 }
 
 // NewScheduler creates a new scheduler.
@@ -35,6 +39,18 @@ func (s *Scheduler) SetDebug(debug bool) {
 	if s.reminderChecker != nil {
 		s.reminderChecker.SetDebug(debug)
 	}
+	if s.idleChecker != nil {
+		s.idleChecker.SetDebug(debug)
+	}
+	if s.breakChecker != nil {
+		s.breakChecker.SetDebug(debug)
+	}
+	if s.goalChecker != nil {
+		s.goalChecker.SetDebug(debug)
+	}
+	if s.summaryGenerator != nil {
+		s.summaryGenerator.SetDebug(debug)
+	}
 }
 
 // SetReminderChecker sets the reminder checker.
@@ -42,6 +58,38 @@ func (s *Scheduler) SetReminderChecker(checker *ReminderChecker) {
 	s.reminderChecker = checker
 	if s.debug {
 		checker.SetDebug(s.debug)
+	}
+}
+
+// SetIdleChecker sets the idle checker.
+func (s *Scheduler) SetIdleChecker(checker *IdleChecker) {
+	s.idleChecker = checker
+	if s.debug {
+		checker.SetDebug(s.debug)
+	}
+}
+
+// SetBreakChecker sets the break checker.
+func (s *Scheduler) SetBreakChecker(checker *BreakChecker) {
+	s.breakChecker = checker
+	if s.debug {
+		checker.SetDebug(s.debug)
+	}
+}
+
+// SetGoalChecker sets the goal checker.
+func (s *Scheduler) SetGoalChecker(checker *GoalChecker) {
+	s.goalChecker = checker
+	if s.debug {
+		checker.SetDebug(s.debug)
+	}
+}
+
+// SetSummaryGenerator sets the summary generator.
+func (s *Scheduler) SetSummaryGenerator(generator *SummaryGenerator) {
+	s.summaryGenerator = generator
+	if s.debug {
+		generator.SetDebug(s.debug)
 	}
 }
 
@@ -105,9 +153,12 @@ func (s *Scheduler) runMinuteChecks() {
 		fmt.Printf("[DEBUG] Running minute checks (elapsed: %v)\n", elapsed.Round(time.Second))
 	}
 
-	// Run checks (these will be implemented in Phase 5-7)
+	// Run checks
 	s.checkReminders()
 	s.checkIdle()
+	s.checkBreak()
+	s.checkDailySummary()
+	s.checkEndOfDay()
 }
 
 // runFiveMinuteChecks runs checks that happen every 5 minutes.
@@ -133,18 +184,51 @@ func (s *Scheduler) checkReminders() {
 
 // checkIdle checks for idle detection.
 func (s *Scheduler) checkIdle() {
-	// Will be implemented in Phase 6
+	if s.idleChecker == nil {
+		return
+	}
 	if s.debug {
 		fmt.Println("[DEBUG] Checking idle status...")
 	}
+	s.idleChecker.Check()
+}
+
+// checkBreak checks for break reminders.
+func (s *Scheduler) checkBreak() {
+	if s.breakChecker == nil {
+		return
+	}
+	if s.debug {
+		fmt.Println("[DEBUG] Checking break status...")
+	}
+	s.breakChecker.Check()
 }
 
 // checkGoalProgress checks goal progress for notifications.
 func (s *Scheduler) checkGoalProgress() {
-	// Will be implemented in Phase 9
+	if s.goalChecker == nil {
+		return
+	}
 	if s.debug {
 		fmt.Println("[DEBUG] Checking goal progress...")
 	}
+	s.goalChecker.Check()
+}
+
+// checkDailySummary checks if it's time for the daily summary.
+func (s *Scheduler) checkDailySummary() {
+	if s.summaryGenerator == nil {
+		return
+	}
+	s.summaryGenerator.CheckDailySummary()
+}
+
+// checkEndOfDay checks if it's time for the end-of-day recap.
+func (s *Scheduler) checkEndOfDay() {
+	if s.summaryGenerator == nil {
+		return
+	}
+	s.summaryGenerator.CheckEndOfDay()
 }
 
 // AddJob adds a custom job to the scheduler.

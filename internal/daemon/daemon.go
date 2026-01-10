@@ -16,13 +16,17 @@ import (
 
 // Daemon manages the background daemon process.
 type Daemon struct {
-	pidFile     *PIDFile
-	scheduler   *scheduler.Scheduler
-	db          *storage.DB
-	reminderRepo *storage.ReminderRepo
-	webhookRepo  *storage.WebhookRepo
-	startedAt   time.Time
-	debug       bool
+	pidFile          *PIDFile
+	scheduler        *scheduler.Scheduler
+	db               *storage.DB
+	reminderRepo     *storage.ReminderRepo
+	webhookRepo      *storage.WebhookRepo
+	blockRepo        *storage.BlockRepo
+	activeBlockRepo  *storage.ActiveBlockRepo
+	goalRepo         *storage.GoalRepo
+	notifyConfigRepo *storage.NotifyConfigRepo
+	startedAt        time.Time
+	debug            bool
 }
 
 // Status represents the daemon status.
@@ -36,10 +40,14 @@ type Status struct {
 // NewDaemon creates a new daemon manager.
 func NewDaemon(db *storage.DB) *Daemon {
 	return &Daemon{
-		pidFile:      NewPIDFile(),
-		db:           db,
-		reminderRepo: storage.NewReminderRepo(db),
-		webhookRepo:  storage.NewWebhookRepo(db),
+		pidFile:          NewPIDFile(),
+		db:               db,
+		reminderRepo:     storage.NewReminderRepo(db),
+		webhookRepo:      storage.NewWebhookRepo(db),
+		blockRepo:        storage.NewBlockRepo(db),
+		activeBlockRepo:  storage.NewActiveBlockRepo(db),
+		goalRepo:         storage.NewGoalRepo(db),
+		notifyConfigRepo: storage.NewNotifyConfigRepo(db),
 	}
 }
 
@@ -99,6 +107,22 @@ func (d *Daemon) Start(ctx context.Context) error {
 	// Set up reminder checker
 	reminderChecker := scheduler.NewReminderChecker(d.reminderRepo, d.webhookRepo)
 	d.scheduler.SetReminderChecker(reminderChecker)
+
+	// Set up idle checker
+	idleChecker := scheduler.NewIdleChecker(d.blockRepo, d.activeBlockRepo, d.webhookRepo, d.notifyConfigRepo)
+	d.scheduler.SetIdleChecker(idleChecker)
+
+	// Set up break checker
+	breakChecker := scheduler.NewBreakChecker(d.blockRepo, d.activeBlockRepo, d.webhookRepo, d.notifyConfigRepo)
+	d.scheduler.SetBreakChecker(breakChecker)
+
+	// Set up goal checker
+	goalChecker := scheduler.NewGoalChecker(d.blockRepo, d.goalRepo, d.webhookRepo, d.notifyConfigRepo)
+	d.scheduler.SetGoalChecker(goalChecker)
+
+	// Set up summary generator
+	summaryGenerator := scheduler.NewSummaryGenerator(d.blockRepo, d.reminderRepo, d.goalRepo, d.webhookRepo, d.notifyConfigRepo)
+	d.scheduler.SetSummaryGenerator(summaryGenerator)
 
 	// Start scheduler
 	if err := d.scheduler.Start(); err != nil {
