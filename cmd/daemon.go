@@ -19,6 +19,7 @@ var (
 	daemonStartFlagForeground bool
 	daemonLogsFlagTail        int
 	daemonLogsFlagFollow      bool
+	daemonInstallFlagForce    bool
 )
 
 // daemonCmd represents the daemon command.
@@ -79,6 +80,31 @@ Examples:
 	RunE: runDaemonLogs,
 }
 
+// daemonInstallCmd installs the daemon as a system service.
+var daemonInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Install daemon as a system service",
+	Long: `Install the Humantime daemon as a system service that starts automatically on login.
+
+On macOS, this creates a launchd agent in ~/Library/LaunchAgents.
+On Linux, this creates a systemd user service in ~/.config/systemd/user.
+
+Examples:
+  humantime daemon install
+  humantime daemon install --force   # Reinstall if already installed`,
+	RunE: runDaemonInstall,
+}
+
+// daemonUninstallCmd uninstalls the daemon system service.
+var daemonUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstall daemon system service",
+	Long: `Remove the Humantime daemon from system services.
+
+This stops the service and removes the service configuration.`,
+	RunE: runDaemonUninstall,
+}
+
 func init() {
 	// Add flags
 	daemonStartCmd.Flags().BoolVarP(&daemonStartFlagForeground, "foreground", "f", false,
@@ -89,11 +115,16 @@ func init() {
 	daemonLogsCmd.Flags().BoolVarP(&daemonLogsFlagFollow, "follow", "f", false,
 		"Follow log output")
 
+	daemonInstallCmd.Flags().BoolVar(&daemonInstallFlagForce, "force", false,
+		"Force reinstall if already installed")
+
 	// Add subcommands
 	daemonCmd.AddCommand(daemonStartCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
 	daemonCmd.AddCommand(daemonStatusCmd)
 	daemonCmd.AddCommand(daemonLogsCmd)
+	daemonCmd.AddCommand(daemonInstallCmd)
+	daemonCmd.AddCommand(daemonUninstallCmd)
 
 	rootCmd.AddCommand(daemonCmd)
 }
@@ -348,4 +379,117 @@ func formatWebhookNames(webhooks []string, count int) string {
 		return strings.Join(webhooks[:3], ", ") + " (+" + strconv.Itoa(len(webhooks)-3) + " more)"
 	}
 	return strings.Join(webhooks, ", ") + " (" + strconv.Itoa(count) + " enabled)"
+}
+
+// runDaemonInstall handles the daemon install command.
+func runDaemonInstall(cmd *cobra.Command, args []string) error {
+	mgr, err := daemon.NewServiceManager()
+	if err != nil {
+		return err
+	}
+	mgr.SetDebug(ctx.Debug)
+
+	// Check if already installed
+	if mgr.IsInstalled() && !daemonInstallFlagForce {
+		if ctx.IsJSON() {
+			return ctx.Formatter.PrintJSON(map[string]interface{}{
+				"status": "already_installed",
+			})
+		}
+		ctx.Formatter.Println("Service is already installed.")
+		ctx.Formatter.Println("Use --force to reinstall.")
+		return nil
+	}
+
+	// Uninstall first if reinstalling
+	if mgr.IsInstalled() && daemonInstallFlagForce {
+		if !ctx.IsJSON() {
+			ctx.Formatter.Println("Removing existing service...")
+		}
+		if err := mgr.Uninstall(); err != nil {
+			return fmt.Errorf("failed to remove existing service: %w", err)
+		}
+	}
+
+	// Install the service
+	if !ctx.IsJSON() {
+		ctx.Formatter.Println("Installing Humantime daemon as system service...")
+	}
+
+	if err := mgr.Install(); err != nil {
+		return err
+	}
+
+	if ctx.IsJSON() {
+		return ctx.Formatter.PrintJSON(map[string]interface{}{
+			"status":  "installed",
+			"message": "Service will start automatically on login",
+		})
+	}
+
+	ctx.Formatter.Println("")
+	ctx.Formatter.Println("✓ Service installed successfully")
+	ctx.Formatter.Println("")
+	ctx.Formatter.Println("The daemon will now start automatically when you log in.")
+	ctx.Formatter.Println("To start it now: humantime daemon start")
+	ctx.Formatter.Println("To remove: humantime daemon uninstall")
+
+	return nil
+}
+
+// runDaemonUninstall handles the daemon uninstall command.
+func runDaemonUninstall(cmd *cobra.Command, args []string) error {
+	mgr, err := daemon.NewServiceManager()
+	if err != nil {
+		return err
+	}
+	mgr.SetDebug(ctx.Debug)
+
+	// Check if installed
+	if !mgr.IsInstalled() {
+		if ctx.IsJSON() {
+			return ctx.Formatter.PrintJSON(map[string]interface{}{
+				"status": "not_installed",
+			})
+		}
+		ctx.Formatter.Println("Service is not installed.")
+		return nil
+	}
+
+	// Stop the daemon if running
+	d := daemon.NewDaemon(ctx.DB)
+	if d.IsRunning() {
+		if !ctx.IsJSON() {
+			ctx.Formatter.Println("Stopping running daemon...")
+		}
+		if err := d.Stop(); err != nil {
+			// Continue anyway - we want to uninstall
+			if ctx.Debug {
+				ctx.Formatter.Printf("[DEBUG] Warning: failed to stop daemon: %v\n", err)
+			}
+		}
+	}
+
+	// Uninstall the service
+	if !ctx.IsJSON() {
+		ctx.Formatter.Println("Uninstalling Humantime daemon service...")
+	}
+
+	if err := mgr.Uninstall(); err != nil {
+		return err
+	}
+
+	if ctx.IsJSON() {
+		return ctx.Formatter.PrintJSON(map[string]interface{}{
+			"status": "uninstalled",
+		})
+	}
+
+	ctx.Formatter.Println("")
+	ctx.Formatter.Println("✓ Service uninstalled successfully")
+	ctx.Formatter.Println("")
+	ctx.Formatter.Println("The daemon will no longer start automatically.")
+	ctx.Formatter.Println("To reinstall: humantime daemon install")
+
+	return nil
 }

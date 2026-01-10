@@ -76,6 +76,10 @@ Examples:
 }
 
 func init() {
+	// Dynamic completion for config keys
+	configGetCmd.ValidArgsFunction = completeConfigKeys
+	configSetCmd.ValidArgsFunction = completeConfigKeys
+
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
 	rootCmd.AddCommand(configCmd)
