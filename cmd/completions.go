@@ -150,3 +150,113 @@ func completeTaskArgs(cmd *cobra.Command, args []string, toComplete string) ([]s
 	}
 	return completeProjectsAndTasks(cmd, args, toComplete)
 }
+
+// completeReminders returns a completion function for reminder IDs.
+func completeReminders(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if ctx == nil || ctx.ReminderRepo == nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	reminders, err := ctx.ReminderRepo.ListPending()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var completions []string
+	for _, r := range reminders {
+		shortID := r.ShortID()
+		if strings.HasPrefix(shortID, toComplete) {
+			completions = append(completions, shortID+"\t"+r.Title)
+		}
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeWebhooks returns a completion function for webhook names.
+func completeWebhooks(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if ctx == nil || ctx.WebhookRepo == nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	webhooks, err := ctx.WebhookRepo.List()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var completions []string
+	for _, w := range webhooks {
+		if strings.HasPrefix(w.Name, toComplete) {
+			status := "enabled"
+			if !w.Enabled {
+				status = "disabled"
+			}
+			completions = append(completions, w.Name+"\t"+string(w.Type)+" ("+status+")")
+		}
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeWebhookTypes returns a completion function for webhook types.
+func completeWebhookTypes(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	types := []string{
+		"discord\tDiscord webhook",
+		"slack\tSlack incoming webhook",
+		"teams\tMicrosoft Teams webhook",
+		"generic\tGeneric HTTP webhook",
+	}
+
+	var filtered []string
+	for _, t := range types {
+		if strings.HasPrefix(strings.Split(t, "\t")[0], toComplete) {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeDaemonSubcommands returns completions for daemon subcommands.
+func completeDaemonSubcommands(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	subcommands := []string{
+		"start\tStart the daemon",
+		"stop\tStop the daemon",
+		"status\tShow daemon status",
+		"logs\tView daemon logs",
+		"install\tInstall as system service",
+		"uninstall\tUninstall system service",
+	}
+
+	var filtered []string
+	for _, s := range subcommands {
+		if strings.HasPrefix(strings.Split(s, "\t")[0], toComplete) {
+			filtered = append(filtered, s)
+		}
+	}
+	return filtered, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeConfigKeys returns completion for config keys.
+func completeConfigKeys(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	keys := []string{
+		"notify\tAll notification settings",
+		"notify.idle-after\tIdle detection threshold",
+		"notify.break-after\tBreak reminder threshold",
+		"notify.break-reset\tBreak reset gap",
+		"notify.goal-progress\tGoal progress milestones",
+		"notify.daily-summary\tDaily summary time",
+		"notify.end-of-day\tEnd of day recap time",
+		"notify.idle\tEnable/disable idle notifications",
+		"notify.break\tEnable/disable break notifications",
+		"notify.goal\tEnable/disable goal notifications",
+		"notify.daily_summary\tEnable/disable daily summary",
+		"notify.end_of_day\tEnable/disable end of day recap",
+		"notify.reminder\tEnable/disable reminders",
+	}
+
+	var filtered []string
+	for _, k := range keys {
+		if strings.HasPrefix(strings.Split(k, "\t")[0], toComplete) {
+			filtered = append(filtered, k)
+		}
+	}
+	return filtered, cobra.ShellCompDirectiveNoFileComp
+}

@@ -16,13 +16,16 @@ type Context struct {
 	Formatter *output.Formatter
 
 	// Repositories
-	BlockRepo       *storage.BlockRepo
-	ProjectRepo     *storage.ProjectRepo
-	TaskRepo        *storage.TaskRepo
-	ConfigRepo      *storage.ConfigRepo
-	ActiveBlockRepo *storage.ActiveBlockRepo
-	GoalRepo        *storage.GoalRepo
-	UndoRepo        *storage.UndoRepo
+	BlockRepo        *storage.BlockRepo
+	ProjectRepo      *storage.ProjectRepo
+	TaskRepo         *storage.TaskRepo
+	ConfigRepo       *storage.ConfigRepo
+	ActiveBlockRepo  *storage.ActiveBlockRepo
+	GoalRepo         *storage.GoalRepo
+	UndoRepo         *storage.UndoRepo
+	ReminderRepo     *storage.ReminderRepo
+	WebhookRepo      *storage.WebhookRepo
+	NotifyConfigRepo *storage.NotifyConfigRepo
 
 	// Debug mode
 	Debug bool
@@ -76,6 +79,9 @@ func New(opts Options) (*Context, error) {
 	activeBlockRepo := storage.NewActiveBlockRepo(db)
 	goalRepo := storage.NewGoalRepo(db)
 	undoRepo := storage.NewUndoRepo(db)
+	reminderRepo := storage.NewReminderRepo(db)
+	webhookRepo := storage.NewWebhookRepo(db)
+	notifyConfigRepo := storage.NewNotifyConfigRepo(db)
 
 	// Get or create config
 	config, err := configRepo.Get()
@@ -90,17 +96,20 @@ func New(opts Options) (*Context, error) {
 	formatter.ColorMode = opts.ColorMode
 
 	return &Context{
-		DB:              db,
-		Config:          config,
-		Formatter:       formatter,
-		BlockRepo:       blockRepo,
-		ProjectRepo:     projectRepo,
-		TaskRepo:        taskRepo,
-		ConfigRepo:      configRepo,
-		ActiveBlockRepo: activeBlockRepo,
-		GoalRepo:        goalRepo,
-		UndoRepo:        undoRepo,
-		Debug:           opts.Debug,
+		DB:               db,
+		Config:           config,
+		Formatter:        formatter,
+		BlockRepo:        blockRepo,
+		ProjectRepo:      projectRepo,
+		TaskRepo:         taskRepo,
+		ConfigRepo:       configRepo,
+		ActiveBlockRepo:  activeBlockRepo,
+		GoalRepo:         goalRepo,
+		UndoRepo:         undoRepo,
+		ReminderRepo:     reminderRepo,
+		WebhookRepo:      webhookRepo,
+		NotifyConfigRepo: notifyConfigRepo,
+		Debug:            opts.Debug,
 	}, nil
 }
 

@@ -84,6 +84,11 @@ func (f *Formatter) JSON(v interface{}) error {
 	return encoder.Encode(v)
 }
 
+// PrintJSON is an alias for JSON for consistency.
+func (f *Formatter) PrintJSON(v interface{}) error {
+	return f.JSON(v)
+}
+
 // FormatDuration formats a duration in human-readable form.
 func FormatDuration(d time.Duration) string {
 	if d < time.Minute {

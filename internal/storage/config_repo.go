@@ -131,3 +131,42 @@ func (r *ActiveBlockRepo) GetPreviousBlock(blockRepo *BlockRepo) (*model.Block, 
 
 	return blockRepo.Get(active.PreviousBlockKey)
 }
+
+// NotifyConfigRepo provides operations for the NotifyConfig singleton.
+type NotifyConfigRepo struct {
+	db *DB
+}
+
+// NewNotifyConfigRepo creates a new notify config repository.
+func NewNotifyConfigRepo(db *DB) *NotifyConfigRepo {
+	return &NotifyConfigRepo{db: db}
+}
+
+// Get retrieves the notify config, returning defaults if not set.
+func (r *NotifyConfigRepo) Get() (*model.NotifyConfig, error) {
+	config := &model.NotifyConfig{}
+	err := r.db.GetRaw(model.KeyNotifyConfig, config)
+	if err == nil {
+		return config, nil
+	}
+
+	if !IsErrKeyNotFound(err) {
+		return nil, err
+	}
+
+	// Return default config (don't persist until explicitly set)
+	return model.DefaultNotifyConfig(), nil
+}
+
+// Set stores the notify config.
+func (r *NotifyConfigRepo) Set(config *model.NotifyConfig) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	return r.db.SetRaw(model.KeyNotifyConfig, config)
+}
+
+// Update updates a specific field of the notify config.
+func (r *NotifyConfigRepo) Update(config *model.NotifyConfig) error {
+	return r.Set(config)
+}
