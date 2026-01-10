@@ -19,6 +19,9 @@ type DeadlineResult struct {
 // relativeRegex matches relative time expressions like "+5m", "+1h", "+2d".
 var relativeRegex = regexp.MustCompile(`^\+(\d+)([smhdw])$`)
 
+// naturalRelativeRegex matches natural language relative times like "1 minute", "in 5 minutes", "2 hours".
+var naturalRelativeRegex = regexp.MustCompile(`^(?:in\s+)?(\d+)\s*(seconds?|minutes?|mins?|hours?|hrs?|days?|weeks?|wks?)$`)
+
 // ParseDeadline parses a natural language deadline expression.
 // Supports formats like:
 //   - "+5m", "+1h", "+2d" (relative)
@@ -33,6 +36,11 @@ func ParseDeadline(input string) DeadlineResult {
 	// Check for relative time format (+5m, +1h, etc.)
 	if match := relativeRegex.FindStringSubmatch(input); match != nil {
 		return parseRelativeDeadline(match[1], match[2])
+	}
+
+	// Check for natural language relative time ("1 minute", "in 5 minutes", etc.)
+	if match := naturalRelativeRegex.FindStringSubmatch(strings.ToLower(input)); match != nil {
+		return parseNaturalRelativeDeadline(match[1], match[2])
 	}
 
 	// Use go-dateparser for natural language parsing
@@ -76,6 +84,32 @@ func parseRelativeDeadline(numStr, unit string) DeadlineResult {
 	case "d":
 		d = time.Duration(num) * 24 * time.Hour
 	case "w":
+		d = time.Duration(num) * 7 * 24 * time.Hour
+	default:
+		return DeadlineResult{Error: fmt.Errorf("invalid time unit: %s", unit)}
+	}
+
+	return DeadlineResult{Time: time.Now().Add(d)}
+}
+
+// parseNaturalRelativeDeadline parses natural language relative time expressions.
+func parseNaturalRelativeDeadline(numStr, unit string) DeadlineResult {
+	num, _ := strconv.Atoi(numStr)
+	if num <= 0 {
+		return DeadlineResult{Error: fmt.Errorf("invalid duration: must be positive")}
+	}
+
+	var d time.Duration
+	switch {
+	case strings.HasPrefix(unit, "second"):
+		d = time.Duration(num) * time.Second
+	case strings.HasPrefix(unit, "min"):
+		d = time.Duration(num) * time.Minute
+	case strings.HasPrefix(unit, "hour"), strings.HasPrefix(unit, "hr"):
+		d = time.Duration(num) * time.Hour
+	case strings.HasPrefix(unit, "day"):
+		d = time.Duration(num) * 24 * time.Hour
+	case strings.HasPrefix(unit, "week"), strings.HasPrefix(unit, "wk"):
 		d = time.Duration(num) * 7 * 24 * time.Hour
 	default:
 		return DeadlineResult{Error: fmt.Errorf("invalid time unit: %s", unit)}

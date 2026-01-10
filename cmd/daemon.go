@@ -107,13 +107,13 @@ This stops the service and removes the service configuration.`,
 
 func init() {
 	// Add flags
-	daemonStartCmd.Flags().BoolVarP(&daemonStartFlagForeground, "foreground", "f", false,
+	daemonStartCmd.Flags().BoolVar(&daemonStartFlagForeground, "foreground", false,
 		"Run in foreground (don't daemonize)")
 
 	daemonLogsCmd.Flags().IntVarP(&daemonLogsFlagTail, "tail", "n", 20,
 		"Number of lines to show")
-	daemonLogsCmd.Flags().BoolVarP(&daemonLogsFlagFollow, "follow", "f", false,
-		"Follow log output")
+	daemonLogsCmd.Flags().BoolVar(&daemonLogsFlagFollow, "follow", false,
+		"Follow log output (like tail -f)")
 
 	daemonInstallCmd.Flags().BoolVar(&daemonInstallFlagForce, "force", false,
 		"Force reinstall if already installed")
