@@ -112,7 +112,7 @@ func init() {
 	webhookAddCmd.Flags().StringVar(&webhookAddFlagTemplate, "template", "",
 		"Custom payload template (required for generic type with custom format)")
 
-	webhookRemoveCmd.Flags().BoolVarP(&webhookRemoveFlagForce, "force", "f", false,
+	webhookRemoveCmd.Flags().BoolVar(&webhookRemoveFlagForce, "force", false,
 		"Skip confirmation")
 
 	webhookTestCmd.Flags().BoolVarP(&webhookTestFlagAll, "all", "a", false,

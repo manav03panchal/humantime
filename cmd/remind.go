@@ -94,7 +94,7 @@ func init() {
 		"Filter by project")
 
 	// Delete flags
-	remindDeleteCmd.Flags().BoolVarP(&remindDeleteForce, "force", "f", false,
+	remindDeleteCmd.Flags().BoolVar(&remindDeleteForce, "force", false,
 		"Skip confirmation")
 
 	// Dynamic completion
