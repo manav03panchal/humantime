@@ -79,6 +79,35 @@ func (d *DB) SetBytes(key string, data []byte) error {
 	})
 }
 
+// GetRaw retrieves a value by key and unmarshals it into v (non-Model interface).
+func (d *DB) GetRaw(key string, v interface{}) error {
+	return d.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				return ErrKeyNotFound
+			}
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			return json.Unmarshal(val, v)
+		})
+	})
+}
+
+// SetRaw stores any JSON-serializable value.
+func (d *DB) SetRaw(key string, v interface{}) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	return d.db.Update(func(txn *badger.Txn) error {
+		return txn.Set([]byte(key), data)
+	})
+}
+
 // Delete removes a key from the database.
 func (d *DB) Delete(key string) error {
 	return d.db.Update(func(txn *badger.Txn) error {

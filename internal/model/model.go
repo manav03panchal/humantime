@@ -17,4 +17,8 @@ const (
 	PrefixGoal        = "goal"
 	KeyActiveBlock    = "activeblock"
 	KeyConfig         = "config"
+	// New prefixes for reminders daemon feature
+	// PrefixReminder = "reminder" - defined in reminder.go
+	// PrefixWebhook  = "webhook"  - defined in webhook.go
+	// KeyNotifyConfig = "config:notify" - defined in notify_config.go
 )
