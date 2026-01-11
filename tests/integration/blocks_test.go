@@ -529,6 +529,609 @@ func TestBlocksListing_DurationCalculation(t *testing.T) {
 }
 
 // =============================================================================
+// Delete Block Tests
+// =============================================================================
+
+func TestBlockOperations_DeleteBlock(t *testing.T) {
+	db := setupTestDB(t)
+	repo := storage.NewBlockRepo(db)
+	now := time.Now()
+
+	t.Run("deletes a block by key", func(t *testing.T) {
+		block := createTestBlock(t, repo, "deleteme", "", "to be deleted", now.Add(-time.Hour), now)
+
+		// Verify block exists
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+
+		// Delete the block
+		err = repo.Delete(block.Key)
+		require.NoError(t, err)
+
+		// Verify block no longer exists
+		_, err = repo.Get(block.Key)
+		assert.Error(t, err)
+	})
+
+	t.Run("deleted block does not appear in list", func(t *testing.T) {
+		block1 := createTestBlock(t, repo, "keep1", "", "", now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+		block2 := createTestBlock(t, repo, "delete2", "", "", now.Add(-2*time.Hour), now.Add(-1*time.Hour))
+		block3 := createTestBlock(t, repo, "keep3", "", "", now.Add(-1*time.Hour), now)
+
+		// Delete block2
+		err := repo.Delete(block2.Key)
+		require.NoError(t, err)
+
+		// List all blocks
+		blocks, err := repo.List()
+		require.NoError(t, err)
+
+		// Find our test blocks
+		var foundKeys []string
+		for _, b := range blocks {
+			if b.Key == block1.Key || b.Key == block2.Key || b.Key == block3.Key {
+				foundKeys = append(foundKeys, b.Key)
+			}
+		}
+
+		assert.Contains(t, foundKeys, block1.Key)
+		assert.NotContains(t, foundKeys, block2.Key)
+		assert.Contains(t, foundKeys, block3.Key)
+	})
+
+	t.Run("deleted block does not appear in filtered results", func(t *testing.T) {
+		block := createTestBlock(t, repo, "filterdelete", "task", "", now.Add(-time.Hour), now)
+
+		// Delete the block
+		err := repo.Delete(block.Key)
+		require.NoError(t, err)
+
+		// Verify it doesn't appear in project filter
+		blocks, err := repo.ListFiltered(storage.BlockFilter{ProjectSID: "filterdelete"})
+		require.NoError(t, err)
+
+		for _, b := range blocks {
+			assert.NotEqual(t, block.Key, b.Key)
+		}
+	})
+
+	t.Run("can delete active block", func(t *testing.T) {
+		activeBlock := createTestBlock(t, repo, "activeDelete", "", "", now.Add(-30*time.Minute), time.Time{})
+		assert.True(t, activeBlock.IsActive())
+
+		err := repo.Delete(activeBlock.Key)
+		require.NoError(t, err)
+
+		_, err = repo.Get(activeBlock.Key)
+		assert.Error(t, err)
+	})
+
+	t.Run("deleting one block does not affect others", func(t *testing.T) {
+		// Create multiple blocks for the same project
+		blocks := make([]*model.Block, 5)
+		for i := 0; i < 5; i++ {
+			blocks[i] = createTestBlock(t, repo, "multiDelete", "", "",
+				now.Add(time.Duration(-5+i)*time.Hour), now.Add(time.Duration(-4+i)*time.Hour))
+		}
+
+		// Delete middle block
+		err := repo.Delete(blocks[2].Key)
+		require.NoError(t, err)
+
+		// Verify all other blocks still exist
+		for i, block := range blocks {
+			if i == 2 {
+				_, err := repo.Get(block.Key)
+				assert.Error(t, err, "deleted block should not exist")
+			} else {
+				retrieved, err := repo.Get(block.Key)
+				require.NoError(t, err)
+				assert.Equal(t, block.Key, retrieved.Key)
+			}
+		}
+	})
+
+	t.Run("duration aggregation excludes deleted blocks", func(t *testing.T) {
+		// Create blocks with known durations
+		block1 := createTestBlock(t, repo, "durDelete1", "", "", now.Add(-3*time.Hour), now.Add(-2*time.Hour)) // 1h
+		block2 := createTestBlock(t, repo, "durDelete2", "", "", now.Add(-2*time.Hour), now.Add(-1*time.Hour)) // 1h
+		createTestBlock(t, repo, "durDelete3", "", "", now.Add(-1*time.Hour), now)                             // 1h
+
+		// Get initial total
+		initialBlocks, err := repo.ListFiltered(storage.BlockFilter{})
+		require.NoError(t, err)
+		initialTotal := storage.TotalDuration(initialBlocks)
+
+		// Delete block2
+		err = repo.Delete(block2.Key)
+		require.NoError(t, err)
+
+		// Get new total
+		remainingBlocks, err := repo.ListFiltered(storage.BlockFilter{})
+		require.NoError(t, err)
+		newTotal := storage.TotalDuration(remainingBlocks)
+
+		// New total should be less by approximately 1 hour
+		assert.Less(t, newTotal, initialTotal)
+		assert.InDelta(t, float64(initialTotal-time.Hour), float64(newTotal), float64(5*time.Second))
+
+		// Cleanup
+		repo.Delete(block1.Key)
+	})
+}
+
+// =============================================================================
+// Edit Block Tests
+// =============================================================================
+
+func TestBlockOperations_EditBlock(t *testing.T) {
+	db := setupTestDB(t)
+	repo := storage.NewBlockRepo(db)
+	now := time.Now()
+
+	t.Run("updates block note", func(t *testing.T) {
+		block := createTestBlock(t, repo, "editNote", "", "original note", now.Add(-time.Hour), now)
+
+		// Update the note
+		block.Note = "updated note"
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Equal(t, "updated note", retrieved.Note)
+	})
+
+	t.Run("updates block project", func(t *testing.T) {
+		block := createTestBlock(t, repo, "projectA", "", "", now.Add(-time.Hour), now)
+
+		// Update the project
+		block.ProjectSID = "projectB"
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Equal(t, "projectB", retrieved.ProjectSID)
+
+		// Verify it appears in new project filter
+		blocks, err := repo.ListFiltered(storage.BlockFilter{ProjectSID: "projectB"})
+		require.NoError(t, err)
+
+		var found bool
+		for _, b := range blocks {
+			if b.Key == block.Key {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "block should appear in new project filter")
+	})
+
+	t.Run("updates block task", func(t *testing.T) {
+		block := createTestBlock(t, repo, "project", "taskA", "", now.Add(-time.Hour), now)
+
+		// Update the task
+		block.TaskSID = "taskB"
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Equal(t, "taskB", retrieved.TaskSID)
+	})
+
+	t.Run("updates block start time", func(t *testing.T) {
+		block := createTestBlock(t, repo, "editStart", "", "", now.Add(-2*time.Hour), now.Add(-time.Hour))
+
+		// Update the start time
+		newStart := now.Add(-3 * time.Hour)
+		block.TimestampStart = newStart
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.True(t, retrieved.TimestampStart.Equal(newStart))
+	})
+
+	t.Run("updates block end time", func(t *testing.T) {
+		block := createTestBlock(t, repo, "editEnd", "", "", now.Add(-2*time.Hour), now.Add(-time.Hour))
+
+		// Update the end time
+		newEnd := now
+		block.TimestampEnd = newEnd
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.True(t, retrieved.TimestampEnd.Equal(newEnd))
+		assert.InDelta(t, 2.0*3600, retrieved.Duration().Seconds(), 1.0)
+	})
+
+	t.Run("stops active block by setting end time", func(t *testing.T) {
+		block := createTestBlock(t, repo, "stopActive", "", "", now.Add(-30*time.Minute), time.Time{})
+		assert.True(t, block.IsActive())
+
+		// Set end time to stop the block
+		block.TimestampEnd = now
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify it's no longer active
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.False(t, retrieved.IsActive())
+	})
+
+	t.Run("updates multiple fields at once", func(t *testing.T) {
+		block := createTestBlock(t, repo, "multiUpdate", "oldTask", "old note", now.Add(-3*time.Hour), now.Add(-2*time.Hour))
+
+		// Update multiple fields
+		block.ProjectSID = "newProject"
+		block.TaskSID = "newTask"
+		block.Note = "new note"
+		block.TimestampStart = now.Add(-4 * time.Hour)
+		block.TimestampEnd = now.Add(-1 * time.Hour)
+
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify all updates
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Equal(t, "newProject", retrieved.ProjectSID)
+		assert.Equal(t, "newTask", retrieved.TaskSID)
+		assert.Equal(t, "new note", retrieved.Note)
+		assert.True(t, retrieved.TimestampStart.Equal(now.Add(-4*time.Hour)))
+		assert.True(t, retrieved.TimestampEnd.Equal(now.Add(-1*time.Hour)))
+	})
+
+	t.Run("updates block tags", func(t *testing.T) {
+		block := createTestBlock(t, repo, "tagEdit", "", "", now.Add(-time.Hour), now)
+		block.Tags = []string{"initial"}
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Update tags
+		block.Tags = []string{"updated", "new-tag", "important"}
+		err = repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Len(t, retrieved.Tags, 3)
+		assert.Contains(t, retrieved.Tags, "updated")
+		assert.Contains(t, retrieved.Tags, "new-tag")
+		assert.Contains(t, retrieved.Tags, "important")
+	})
+
+	t.Run("clears optional fields", func(t *testing.T) {
+		block := createTestBlock(t, repo, "clearFields", "taskToClear", "note to clear", now.Add(-time.Hour), now)
+		block.Tags = []string{"tag1", "tag2"}
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Clear optional fields
+		block.TaskSID = ""
+		block.Note = ""
+		block.Tags = nil
+		err = repo.Update(block)
+		require.NoError(t, err)
+
+		// Retrieve and verify
+		retrieved, err := repo.Get(block.Key)
+		require.NoError(t, err)
+		assert.Empty(t, retrieved.TaskSID)
+		assert.Empty(t, retrieved.Note)
+		assert.Empty(t, retrieved.Tags)
+	})
+
+	t.Run("update preserves block key", func(t *testing.T) {
+		block := createTestBlock(t, repo, "preserveKey", "", "", now.Add(-time.Hour), now)
+		originalKey := block.Key
+
+		// Update the block
+		block.Note = "updated"
+		err := repo.Update(block)
+		require.NoError(t, err)
+
+		// Verify key is preserved
+		assert.Equal(t, originalKey, block.Key)
+
+		// Can still retrieve by original key
+		retrieved, err := repo.Get(originalKey)
+		require.NoError(t, err)
+		assert.Equal(t, "updated", retrieved.Note)
+	})
+
+	t.Run("update affects filter results", func(t *testing.T) {
+		block := createTestBlock(t, repo, "filterUpdate", "", "", now.Add(-time.Hour), now)
+
+		// Initially in filterUpdate project
+		blocks, err := repo.ListFiltered(storage.BlockFilter{ProjectSID: "filterUpdate"})
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, len(blocks), 1)
+
+		// Move to different project
+		block.ProjectSID = "newFilterProject"
+		err = repo.Update(block)
+		require.NoError(t, err)
+
+		// Should no longer appear in old project filter
+		blocks, err = repo.ListFiltered(storage.BlockFilter{ProjectSID: "filterUpdate"})
+		require.NoError(t, err)
+		for _, b := range blocks {
+			assert.NotEqual(t, block.Key, b.Key)
+		}
+
+		// Should appear in new project filter
+		blocks, err = repo.ListFiltered(storage.BlockFilter{ProjectSID: "newFilterProject"})
+		require.NoError(t, err)
+		var found bool
+		for _, b := range blocks {
+			if b.Key == block.Key {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found)
+	})
+}
+
+// =============================================================================
+// Filter by Tag Tests
+// =============================================================================
+
+func TestBlocksListing_FilterByTag(t *testing.T) {
+	db := setupTestDB(t)
+	repo := storage.NewBlockRepo(db)
+	now := time.Now()
+
+	// Helper to create block with tags
+	createBlockWithTags := func(projectSID string, tags []string) *model.Block {
+		block := createTestBlock(t, repo, projectSID, "", "", now.Add(-time.Hour), now)
+		block.Tags = tags
+		require.NoError(t, repo.Update(block))
+		return block
+	}
+
+	t.Run("filters blocks by single tag", func(t *testing.T) {
+		block1 := createBlockWithTags("tagproj1", []string{"urgent", "work"})
+		createBlockWithTags("tagproj2", []string{"personal"})
+		block3 := createBlockWithTags("tagproj3", []string{"urgent", "home"})
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{Tag: "urgent"})
+		require.NoError(t, err)
+
+		var foundKeys []string
+		for _, b := range blocks {
+			if b.Key == block1.Key || b.Key == block3.Key {
+				foundKeys = append(foundKeys, b.Key)
+			}
+		}
+		assert.Len(t, foundKeys, 2)
+	})
+
+	t.Run("tag filter is case-insensitive", func(t *testing.T) {
+		block := createBlockWithTags("caseTag", []string{"Important"})
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{Tag: "important"})
+		require.NoError(t, err)
+
+		var found bool
+		for _, b := range blocks {
+			if b.Key == block.Key {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found)
+	})
+
+	t.Run("returns empty for non-existent tag", func(t *testing.T) {
+		createBlockWithTags("noMatch", []string{"existing"})
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{Tag: "nonexistent-tag-xyz"})
+		require.NoError(t, err)
+
+		for _, b := range blocks {
+			assert.False(t, b.HasTag("nonexistent-tag-xyz"))
+		}
+	})
+
+	t.Run("combines tag filter with project filter", func(t *testing.T) {
+		createBlockWithTags("combineProj", []string{"special"})
+		createBlockWithTags("otherProj", []string{"special"})
+		createBlockWithTags("combineProj", []string{"normal"})
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			ProjectSID: "combineProj",
+			Tag:        "special",
+		})
+		require.NoError(t, err)
+
+		for _, b := range blocks {
+			assert.Equal(t, "combineProj", b.ProjectSID)
+			assert.True(t, b.HasTag("special"))
+		}
+	})
+
+	t.Run("combines tag filter with time range", func(t *testing.T) {
+		block := model.NewBlock("user-123", "timeTagProj", "", "", now.Add(-30*time.Minute))
+		block.TimestampEnd = now
+		block.Tags = []string{"recent"}
+		require.NoError(t, repo.Create(block))
+
+		oldBlock := model.NewBlock("user-123", "timeTagProj2", "", "", now.Add(-5*time.Hour))
+		oldBlock.TimestampEnd = now.Add(-4 * time.Hour)
+		oldBlock.Tags = []string{"recent"}
+		require.NoError(t, repo.Create(oldBlock))
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			Tag:        "recent",
+			StartAfter: now.Add(-1 * time.Hour),
+		})
+		require.NoError(t, err)
+
+		for _, b := range blocks {
+			assert.True(t, b.HasTag("recent"))
+			assert.True(t, b.TimestampStart.After(now.Add(-1*time.Hour)) || b.TimestampStart.Equal(now.Add(-1*time.Hour)))
+		}
+	})
+}
+
+// =============================================================================
+// Additional Date Range Filter Tests
+// =============================================================================
+
+func TestBlocksListing_DateRangeEdgeCases(t *testing.T) {
+	db := setupTestDB(t)
+	repo := storage.NewBlockRepo(db)
+	now := time.Now()
+
+	t.Run("filters blocks for today", func(t *testing.T) {
+		// Start of today
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		tomorrowStart := todayStart.Add(24 * time.Hour)
+
+		// Create a block for today
+		todayBlock := createTestBlock(t, repo, "todayProj", "", "today work", now.Add(-2*time.Hour), now.Add(-1*time.Hour))
+
+		// Create a block for yesterday
+		yesterdayBlock := createTestBlock(t, repo, "yesterdayProj", "", "yesterday work",
+			todayStart.Add(-5*time.Hour), todayStart.Add(-4*time.Hour))
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			StartAfter: todayStart,
+			EndBefore:  tomorrowStart,
+		})
+		require.NoError(t, err)
+
+		var foundToday, foundYesterday bool
+		for _, b := range blocks {
+			if b.Key == todayBlock.Key {
+				foundToday = true
+			}
+			if b.Key == yesterdayBlock.Key {
+				foundYesterday = true
+			}
+		}
+		assert.True(t, foundToday, "should find today's block")
+		assert.False(t, foundYesterday, "should not find yesterday's block")
+	})
+
+	t.Run("filters blocks for this week", func(t *testing.T) {
+		// Calculate start of week (assuming Sunday start)
+		daysFromSunday := int(now.Weekday())
+		weekStart := time.Date(now.Year(), now.Month(), now.Day()-daysFromSunday, 0, 0, 0, 0, now.Location())
+		weekEnd := weekStart.Add(7 * 24 * time.Hour)
+
+		// Create a block within this week
+		weekBlock := createTestBlock(t, repo, "weekProj", "", "", now.Add(-time.Hour), now)
+
+		// Create a block from last week
+		lastWeekBlock := createTestBlock(t, repo, "lastWeekProj", "", "",
+			weekStart.Add(-3*24*time.Hour), weekStart.Add(-2*24*time.Hour))
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			StartAfter: weekStart,
+			EndBefore:  weekEnd,
+		})
+		require.NoError(t, err)
+
+		var foundWeek, foundLastWeek bool
+		for _, b := range blocks {
+			if b.Key == weekBlock.Key {
+				foundWeek = true
+			}
+			if b.Key == lastWeekBlock.Key {
+				foundLastWeek = true
+			}
+		}
+		assert.True(t, foundWeek, "should find this week's block")
+		assert.False(t, foundLastWeek, "should not find last week's block")
+	})
+
+	t.Run("handles boundary conditions - StartAfter is inclusive", func(t *testing.T) {
+		// Block that starts exactly at filter boundary
+		boundary := now.Add(-2 * time.Hour)
+		boundaryBlock := createTestBlock(t, repo, "boundaryProj", "", "", boundary, now.Add(-time.Hour))
+
+		// StartAfter filter: blocks starting at or after the boundary are included
+		// The implementation uses: !b.TimestampStart.Before(filter.StartAfter)
+		// This means blocks starting at the exact time ARE included (inclusive)
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			StartAfter: boundary,
+		})
+		require.NoError(t, err)
+
+		var foundBoundary bool
+		for _, b := range blocks {
+			if b.Key == boundaryBlock.Key {
+				foundBoundary = true
+				break
+			}
+		}
+		// Block starts exactly at StartAfter time, so it should be included (inclusive behavior)
+		assert.True(t, foundBoundary, "block starting at boundary should be included in StartAfter filter (inclusive)")
+	})
+
+	t.Run("handles boundary conditions - block before boundary excluded", func(t *testing.T) {
+		// Block that starts just before the filter boundary
+		boundary := now.Add(-2 * time.Hour)
+		beforeBlock := createTestBlock(t, repo, "beforeBoundary", "", "",
+			boundary.Add(-time.Minute), now.Add(-time.Hour))
+
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			StartAfter: boundary,
+		})
+		require.NoError(t, err)
+
+		var foundBefore bool
+		for _, b := range blocks {
+			if b.Key == beforeBlock.Key {
+				foundBefore = true
+				break
+			}
+		}
+		assert.False(t, foundBefore, "block starting before boundary should not be included")
+	})
+
+	t.Run("handles blocks spanning midnight", func(t *testing.T) {
+		// Create a block that spans across midnight
+		todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		midnightBlock := createTestBlock(t, repo, "midnightProj", "", "",
+			todayStart.Add(-2*time.Hour), todayStart.Add(2*time.Hour))
+
+		// Query for yesterday - should not include
+		yesterdayEnd := todayStart
+		blocks, err := repo.ListFiltered(storage.BlockFilter{
+			EndBefore: yesterdayEnd,
+		})
+		require.NoError(t, err)
+
+		var found bool
+		for _, b := range blocks {
+			if b.Key == midnightBlock.Key {
+				found = true
+				break
+			}
+		}
+		// Block ends at 2am today, not before midnight
+		assert.False(t, found, "midnight-spanning block should not appear when filtering for yesterday")
+	})
+}
+
+// =============================================================================
 // Edge Cases Tests
 // =============================================================================
 
