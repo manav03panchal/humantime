@@ -322,12 +322,12 @@ func TestMaskMap(t *testing.T) {
 
 	t.Run("with_url_in_string", func(t *testing.T) {
 		input := map[string]any{
-			"webhook": "https://discord.com/api/webhooks/123456/abcdefghijklmnopqrstuvwxyz",
+			"webhook": "https://example.com/webhook/test-logging",
 		}
 		result := MaskMap(input)
 		// URL should be masked
 		masked := result["webhook"].(string)
-		assert.Contains(t, masked, "https://discord.com")
+		assert.Contains(t, masked, "https://example.com")
 	})
 
 	t.Run("with_non_string_sensitive", func(t *testing.T) {

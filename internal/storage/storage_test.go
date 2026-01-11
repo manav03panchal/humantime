@@ -1132,7 +1132,7 @@ func TestWebhookRepoCreateAndGet(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewWebhookRepo(db)
 
-	webhook := model.NewWebhook("my-hook", model.WebhookTypeDiscord, "https://discord.com/api/webhooks/123")
+	webhook := model.NewWebhook("my-hook", model.WebhookTypeDiscord, "https://example.com/webhook/test")
 	err := repo.Create(webhook)
 	require.NoError(t, err)
 

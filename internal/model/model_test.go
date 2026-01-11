@@ -379,13 +379,13 @@ func TestIsValidRepeatRule(t *testing.T) {
 // =============================================================================
 
 func TestNewWebhook(t *testing.T) {
-	webhook := NewWebhook("my-hook", WebhookTypeDiscord, "https://discord.com/api/webhooks/123")
+	webhook := NewWebhook("my-hook", WebhookTypeDiscord, "https://example.com/webhook/test")
 
 	assert.NotNil(t, webhook)
 	assert.Equal(t, "webhook:my-hook", webhook.Key)
 	assert.Equal(t, "my-hook", webhook.Name)
 	assert.Equal(t, WebhookTypeDiscord, webhook.Type)
-	assert.Equal(t, "https://discord.com/api/webhooks/123", webhook.URL)
+	assert.Equal(t, "https://example.com/webhook/test", webhook.URL)
 	assert.True(t, webhook.Enabled)
 }
 
@@ -405,9 +405,9 @@ func TestWebhookIsEnabled(t *testing.T) {
 
 func TestWebhookMaskedURL(t *testing.T) {
 	t.Run("long_url", func(t *testing.T) {
-		w := &Webhook{URL: "https://discord.com/api/webhooks/123456789/abcdefghijklmnopqrstuvwxyz"}
+		w := &Webhook{URL: "https://example.com/webhook/test456789/abcdefghijklmnopqrstuvwxyz"}
 		masked := w.MaskedURL()
-		assert.Equal(t, "https://discord.com/api/webhoo***", masked)
+		assert.Equal(t, "https://example.com/webhook/te***", masked)
 	})
 
 	t.Run("short_url", func(t *testing.T) {
@@ -471,8 +471,8 @@ func TestDetectWebhookType(t *testing.T) {
 		url      string
 		expected string
 	}{
-		{"https://discord.com/api/webhooks/123/abc", WebhookTypeDiscord},
-		{"https://DISCORD.COM/API/WEBHOOKS/123/abc", WebhookTypeDiscord},
+		{"https://discord.com/api/webhooks/000/test", WebhookTypeDiscord},
+		{"https://DISCORD.COM/API/WEBHOOKS/000/test", WebhookTypeDiscord},
 		{"https://hooks.slack.com/services/T00/B00/XXX", WebhookTypeSlack},
 		{"https://HOOKS.SLACK.COM/services/T00/B00/XXX", WebhookTypeSlack},
 		{"https://outlook.office.com/webhook/abc", WebhookTypeTeams},
