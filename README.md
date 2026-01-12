@@ -15,7 +15,36 @@ A next-generation CLI time tracking tool inspired by [Zeit](https://github.com/m
 
 ## Installation
 
+### Quick Install (Recommended)
+
+Install humantime with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/humantime/main/install.sh | sh
+```
+
+This works on **macOS**, **Linux**, and **Windows** (via WSL/Git Bash). The script automatically:
+- Detects your OS and architecture
+- Downloads the correct binary
+- Installs to `~/.local/bin` (or `/usr/local/bin` if writable)
+- Adds the install directory to your PATH
+
+#### Install Options
+
+```bash
+# Install a specific version
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/humantime/main/install.sh | HUMANTIME_VERSION=v0.3.0 sh
+
+# Install to a custom directory
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/humantime/main/install.sh | HUMANTIME_INSTALL_DIR=/opt/bin sh
+
+# Skip PATH modification
+curl -fsSL https://raw.githubusercontent.com/manav03panchal/humantime/main/install.sh | HUMANTIME_NO_MODIFY_PATH=1 sh
+```
+
 ### Using Go Install
+
+If you have Go installed:
 
 ```bash
 go install github.com/manav03panchal/humantime@latest
@@ -23,13 +52,27 @@ go install github.com/manav03panchal/humantime@latest
 
 ### Download Binary
 
-Pre-built binaries are available on the [Releases](https://github.com/manav03panchal/humantime/releases) page.
+Pre-built binaries for all platforms are available on the [Releases](https://github.com/manav03panchal/humantime/releases) page.
+
+| Platform | Architecture | Binary |
+|----------|--------------|--------|
+| macOS | Intel (x64) | `humantime-darwin-amd64` |
+| macOS | Apple Silicon (M1/M2/M3) | `humantime-darwin-arm64` |
+| Linux | x64 | `humantime-linux-amd64` |
+| Linux | ARM64 | `humantime-linux-arm64` |
+| Windows | x64 | `humantime-windows-amd64.exe` |
 
 ### Build from Source
 
 ```bash
 git clone https://github.com/manav03panchal/humantime.git
 cd humantime
+make build
+```
+
+Or without make:
+
+```bash
 go build -o humantime .
 ```
 
