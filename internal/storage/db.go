@@ -38,7 +38,6 @@ func DefaultPath() string {
 // Open opens or creates a database at the given path.
 func Open(opts Options) (*DB, error) {
 	var badgerOpts badger.Options
-	var lock *FileLock
 
 	if opts.InMemory || opts.Path == "" {
 		// In-memory mode for testing
@@ -49,13 +48,10 @@ func Open(opts Options) (*DB, error) {
 			return nil, err
 		}
 
-		// Acquire file lock to prevent concurrent access
-		lock = NewFileLock(opts.Path)
-		if err := lock.Acquire(); err != nil {
-			return nil, NewLockError(err)
-		}
-
 		badgerOpts = badger.DefaultOptions(opts.Path)
+		// Allow multiple processes to read the database
+		// BadgerDB handles its own locking internally
+		badgerOpts = badgerOpts.WithBypassLockGuard(true)
 	}
 
 	// Reduce logging noise
@@ -63,14 +59,10 @@ func Open(opts Options) (*DB, error) {
 
 	db, err := badger.Open(badgerOpts)
 	if err != nil {
-		// Release the lock if we failed to open the database
-		if lock != nil {
-			lock.Release()
-		}
 		return nil, err
 	}
 
-	return &DB{db: db, lock: lock, path: opts.Path}, nil
+	return &DB{db: db, lock: nil, path: opts.Path}, nil
 }
 
 // Close closes the database connection and releases the file lock.
