@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: "1.21"
 
       - name: Get version
         id: version
@@ -63,7 +63,7 @@ jobs:
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
 
-          go build -ldflags "-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+          go build -ldflags "-s -w -X github.com/manav03panchal/humantime/cmd.Version=${VERSION} -X github.com/manav03panchal/humantime/cmd.Commit=${COMMIT} -X github.com/manav03panchal/humantime/cmd.BuildTime=${BUILD_TIME}" \
             -o "dist/${BINARY_NAME}" .
 
       - name: Upload artifact
