@@ -35,6 +35,7 @@ var (
 	projectCreateFlagColor string
 	projectEditFlagName    string
 	projectEditFlagColor   string
+	projectDeleteFlagForce bool
 )
 
 // projectCreateCmd creates a new project.
@@ -53,6 +54,21 @@ var projectEditCmd = &cobra.Command{
 	RunE:  runProjectEdit,
 }
 
+// projectDeleteCmd deletes a project.
+var projectDeleteCmd = &cobra.Command{
+	Use:   "delete PROJECT_SID",
+	Short: "Delete a project and all its data",
+	Long: `Delete a project and optionally all associated tasks, blocks, goals, and reminders.
+
+WARNING: This operation cannot be undone. All time tracking data for this project will be lost.
+
+Examples:
+  humantime project delete myproject
+  humantime project delete myproject --force`,
+	Args: cobra.ExactArgs(1),
+	RunE: runProjectDelete,
+}
+
 func init() {
 	// Create flags
 	projectCreateCmd.Flags().StringVarP(&projectCreateFlagSID, "sid", "s", "", "Custom SID (auto-generated if omitted)")
@@ -62,12 +78,17 @@ func init() {
 	projectEditCmd.Flags().StringVarP(&projectEditFlagName, "name", "n", "", "Update display name")
 	projectEditCmd.Flags().StringVarP(&projectEditFlagColor, "color", "c", "", "Update color")
 
+	// Delete flags
+	projectDeleteCmd.Flags().BoolVar(&projectDeleteFlagForce, "force", false, "Skip confirmation prompt")
+
 	// Dynamic completion for projects
 	projectCmd.ValidArgsFunction = completeProjectArgs
 	projectEditCmd.ValidArgsFunction = completeProjectArgs
+	projectDeleteCmd.ValidArgsFunction = completeProjectArgs
 
 	projectCmd.AddCommand(projectCreateCmd)
 	projectCmd.AddCommand(projectEditCmd)
+	projectCmd.AddCommand(projectDeleteCmd)
 	rootCmd.AddCommand(projectCmd)
 }
 
@@ -278,6 +299,96 @@ func runProjectEdit(cmd *cobra.Command, args []string) error {
 		cli.Printf("  Color: %s\n", project.Color)
 	}
 
+	return nil
+}
+
+func runProjectDelete(cmd *cobra.Command, args []string) error {
+	sid := args[0]
+
+	// Verify project exists
+	project, err := ctx.ProjectRepo.Get(sid)
+	if err != nil {
+		if storage.IsErrKeyNotFound(err) {
+			return runtime.ErrProjectNotFound
+		}
+		return err
+	}
+
+	// Count associated data
+	blocks, _ := ctx.BlockRepo.ListByProject(sid)
+	tasks, _ := ctx.TaskRepo.ListByProject(sid)
+	reminders, _ := ctx.ReminderRepo.ListByProject(sid)
+	goal, _ := ctx.GoalRepo.Get(sid)
+
+	blockCount := len(blocks)
+	taskCount := len(tasks)
+	reminderCount := len(reminders)
+	hasGoal := goal != nil
+
+	// Calculate total tracked time
+	var totalSeconds int64
+	for _, b := range blocks {
+		totalSeconds += b.DurationSeconds()
+	}
+
+	cli := ctx.CLIFormatter()
+
+	// Show what will be deleted
+	if !projectDeleteFlagForce {
+		cli.Warning(fmt.Sprintf("About to delete project '%s'", sid))
+		cli.Println("")
+		cli.Printf("  Display Name: %s\n", project.DisplayName)
+		cli.Printf("  Total Time:   %s\n", output.FormatDuration(secondsToDuration(totalSeconds)))
+		cli.Printf("  Blocks:       %d\n", blockCount)
+		cli.Printf("  Tasks:        %d\n", taskCount)
+		if hasGoal {
+			cli.Printf("  Goal:         yes\n")
+		}
+		if reminderCount > 0 {
+			cli.Printf("  Reminders:    %d\n", reminderCount)
+		}
+		cli.Println("")
+		cli.Warning("This action cannot be undone!")
+		cli.Println("")
+
+		confirmed, err := promptConfirmation("Are you sure? (y/N): ")
+		if err != nil || !confirmed {
+			cli.Muted("Aborted.")
+			return nil
+		}
+	}
+
+	// Delete associated data
+	for _, b := range blocks {
+		_ = ctx.BlockRepo.Delete(b.Key)
+	}
+	for _, t := range tasks {
+		_ = ctx.TaskRepo.Delete(sid, t.SID)
+	}
+	for _, r := range reminders {
+		_ = ctx.ReminderRepo.Delete(r.Key)
+	}
+	if hasGoal {
+		_ = ctx.GoalRepo.Delete(sid)
+	}
+
+	// Delete the project
+	if err := ctx.ProjectRepo.Delete(sid); err != nil {
+		return err
+	}
+
+	if ctx.IsJSON() {
+		return ctx.Formatter.JSON(map[string]any{
+			"status":          "deleted",
+			"project_sid":     sid,
+			"blocks_deleted":  blockCount,
+			"tasks_deleted":   taskCount,
+			"goal_deleted":    hasGoal,
+			"reminders_deleted": reminderCount,
+		})
+	}
+
+	cli.Success(fmt.Sprintf("Deleted project '%s' and all associated data", sid))
 	return nil
 }
 
