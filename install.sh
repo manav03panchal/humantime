@@ -351,10 +351,38 @@ install_humantime() {
 
     success "Installed humantime to $INSTALL_DIR/$FINAL_NAME"
 
+    # Restart daemon if it was running
+    restart_daemon_if_running "$INSTALL_DIR/$FINAL_NAME"
+
     # Add to PATH if needed
     add_to_path "$INSTALL_DIR"
 
     show_success_message "$INSTALL_DIR"
+}
+
+# Restart daemon if it was running before upgrade
+restart_daemon_if_running() {
+    BINARY="$1"
+
+    # Check if daemon command exists and if daemon is running
+    if ! "$BINARY" daemon status 2>/dev/null | grep -q "running"; then
+        return 0
+    fi
+
+    info "Restarting daemon with new version..."
+
+    # Stop the old daemon
+    if "$BINARY" daemon stop >/dev/null 2>&1; then
+        sleep 1
+        # Start with new binary
+        if "$BINARY" daemon start >/dev/null 2>&1; then
+            success "Daemon restarted with new version"
+        else
+            warn "Failed to restart daemon. Start manually with: humantime daemon start"
+        fi
+    else
+        warn "Failed to stop old daemon. Restart manually with: humantime daemon stop && humantime daemon start"
+    fi
 }
 
 # Show success message after installation

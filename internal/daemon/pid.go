@@ -33,12 +33,9 @@ func NewPIDFile() *PIDFile {
 
 // GetPIDFilePath returns the path to the PID file.
 func GetPIDFilePath() string {
-	// Try XDG runtime dir first
-	if xdg.RuntimeDir != "" {
-		return filepath.Join(xdg.RuntimeDir, PIDFileName)
-	}
-	// Fall back to temp dir
-	return filepath.Join(os.TempDir(), PIDFileName)
+	// Use XDG state directory for PID file (persists across reboots but is user-specific)
+	// This is more reliable than runtime dir which may not exist on macOS
+	return filepath.Join(xdg.StateHome, AppName, PIDFileName)
 }
 
 // Write writes the current process PID to the file.

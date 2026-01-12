@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/adrg/xdg"
@@ -176,10 +177,8 @@ func (d *Daemon) StartBackground() (int, error) {
 
 	// Detach from terminal
 	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
 
-	// Set up log file
+	// Set up log file for stdout
 	logPath := GetLogPath()
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err == nil {
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -199,10 +198,40 @@ func (d *Daemon) StartBackground() (int, error) {
 
 	// Verify it's running
 	if !d.pidFile.IsRunning() {
-		return 0, fmt.Errorf("daemon failed to start")
+		// Check log file for error message
+		if errMsg := d.readLastLogError(); errMsg != "" {
+			return 0, fmt.Errorf("daemon failed to start: %s", errMsg)
+		}
+		return 0, fmt.Errorf("daemon failed to start (check logs: %s)", logPath)
 	}
 
 	return cmd.Process.Pid, nil
+}
+
+// readLastLogError reads the last few lines of the log file to find error messages.
+func (d *Daemon) readLastLogError() string {
+	logPath := GetLogPath()
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(string(data), "\n")
+	// Look at last 10 lines for error messages
+	start := len(lines) - 10
+	if start < 0 {
+		start = 0
+	}
+
+	for i := len(lines) - 1; i >= start; i-- {
+		line := strings.TrimSpace(lines[i])
+		if strings.Contains(strings.ToLower(line), "error") ||
+			strings.Contains(line, "cannot access database") ||
+			strings.Contains(line, "failed to") {
+			return line
+		}
+	}
+	return ""
 }
 
 // Stop stops the running daemon.

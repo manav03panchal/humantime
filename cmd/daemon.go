@@ -131,6 +131,30 @@ func init() {
 
 // runDaemonStart handles the daemon start command.
 func runDaemonStart(cmd *cobra.Command, args []string) error {
+	// For background start, ctx may be nil (we skip DB init to avoid lock conflicts)
+	if !daemonStartFlagForeground {
+		// Background mode - spawn child process without holding database lock
+		d := daemon.NewDaemon(nil)
+		d.SetDebug(flagDebug)
+
+		// Check if already running
+		if d.IsRunning() {
+			status := d.GetStatus()
+			return fmt.Errorf("daemon is already running (PID: %d)", status.PID)
+		}
+
+		// Start in background
+		pid, err := d.StartBackground()
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Starting humantime daemon...")
+		fmt.Printf("Daemon started (PID: %d)\n", pid)
+		return nil
+	}
+
+	// Foreground mode - ctx is initialized
 	d := daemon.NewDaemon(ctx.DB)
 	d.SetDebug(ctx.Debug)
 
@@ -154,118 +178,51 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 		ctx.Formatter.Println("")
 	}
 
-	if daemonStartFlagForeground {
-		// Run in foreground
-		if !ctx.IsJSON() {
-			ctx.Formatter.Printf("Starting humantime daemon (foreground mode)...\n")
-		}
-		return d.Start(context.Background())
+	// Run in foreground
+	if !ctx.IsJSON() {
+		ctx.Formatter.Printf("Starting humantime daemon (foreground mode)...\n")
 	}
-
-	// Start in background
-	pid, err := d.StartBackground()
-	if err != nil {
-		return err
-	}
-
-	if ctx.IsJSON() {
-		return ctx.Formatter.PrintJSON(map[string]interface{}{
-			"status":     "started",
-			"pid":        pid,
-			"started_at": d.GetStatus().StartedAt,
-		})
-	}
-
-	ctx.Formatter.Println("Starting humantime daemon...")
-	ctx.Formatter.Printf("✓ Daemon started (PID: %d)\n", pid)
-	ctx.Formatter.Println("")
-	ctx.Formatter.Println("Monitoring:")
-	ctx.Formatter.Println("  • Idle detection")
-	ctx.Formatter.Println("  • Break reminders")
-	ctx.Formatter.Println("  • Goal progress")
-	ctx.Formatter.Println("  • Daily summary")
-	ctx.Formatter.Println("  • End of day recap")
-	ctx.Formatter.Println("  • Reminder deadlines")
-	ctx.Formatter.Println("")
-	ctx.Formatter.Printf("Configured webhooks: %d enabled\n", webhookCount)
-
-	return nil
+	return d.Start(context.Background())
 }
 
 // runDaemonStop handles the daemon stop command.
 func runDaemonStop(cmd *cobra.Command, args []string) error {
-	d := daemon.NewDaemon(ctx.DB)
+	d := daemon.NewDaemon(nil)
 
 	if !d.IsRunning() {
-		if ctx.IsJSON() {
-			return ctx.Formatter.PrintJSON(map[string]interface{}{
-				"status": "not_running",
-			})
-		}
-		ctx.Formatter.Println("Daemon is not running")
+		fmt.Println("Daemon is not running")
 		return nil
 	}
 
 	status := d.GetStatus()
 	pid := status.PID
 
-	if !ctx.IsJSON() {
-		ctx.Formatter.Println("Stopping humantime daemon...")
-	}
+	fmt.Println("Stopping humantime daemon...")
 
 	if err := d.Stop(); err != nil {
 		return err
 	}
 
-	if ctx.IsJSON() {
-		return ctx.Formatter.PrintJSON(map[string]interface{}{
-			"status":       "stopped",
-			"previous_pid": pid,
-		})
-	}
-
-	ctx.Formatter.Printf("✓ Daemon stopped (was PID: %d)\n", pid)
+	fmt.Printf("Daemon stopped (was PID: %d)\n", pid)
 	return nil
 }
 
 // runDaemonStatus handles the daemon status command.
 func runDaemonStatus(cmd *cobra.Command, args []string) error {
-	d := daemon.NewDaemon(ctx.DB)
+	d := daemon.NewDaemon(nil)
 	status := d.GetStatus()
 
-	if ctx.IsJSON() {
-		result := map[string]interface{}{
-			"status": "stopped",
-		}
-		if status.Running {
-			result["status"] = "running"
-			result["pid"] = status.PID
-			result["started_at"] = status.StartedAt
-			result["uptime_seconds"] = int(status.StartedAt.Sub(status.StartedAt).Seconds())
-		}
-		return ctx.Formatter.PrintJSON(result)
-	}
-
-	ctx.Formatter.Println("Humantime Daemon Status")
-	ctx.Formatter.Println("")
+	fmt.Println("Humantime Daemon Status")
+	fmt.Println("")
 
 	if status.Running {
-		ctx.Formatter.Printf("  Status:    running\n")
-		ctx.Formatter.Printf("  PID:       %d\n", status.PID)
-		ctx.Formatter.Printf("  Uptime:    %s\n", status.Uptime)
-
-		// Show webhook info
-		dispatcher := notify.NewDispatcher(ctx.WebhookRepo)
-		ctx.Formatter.Println("")
-		ctx.Formatter.Printf("Active Webhooks: %d\n", dispatcher.CountEnabledWebhooks())
-
-		// Show pending reminders count
-		reminders, _ := ctx.ReminderRepo.ListPending()
-		ctx.Formatter.Printf("Pending Reminders: %d\n", len(reminders))
+		fmt.Printf("  Status:    running\n")
+		fmt.Printf("  PID:       %d\n", status.PID)
+		fmt.Printf("  Uptime:    %s\n", status.Uptime)
 	} else {
-		ctx.Formatter.Printf("  Status:    stopped\n")
-		ctx.Formatter.Println("")
-		ctx.Formatter.Println("Start with: humantime daemon start")
+		fmt.Printf("  Status:    stopped\n")
+		fmt.Println("")
+		fmt.Println("Start with: humantime daemon start")
 	}
 
 	return nil
@@ -277,14 +234,8 @@ func runDaemonLogs(cmd *cobra.Command, args []string) error {
 
 	// Check if log file exists
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
-		if ctx.IsJSON() {
-			return ctx.Formatter.PrintJSON(map[string]interface{}{
-				"error": "no log file found",
-				"path":  logPath,
-			})
-		}
-		ctx.Formatter.Println("No log file found.")
-		ctx.Formatter.Printf("Log path: %s\n", logPath)
+		fmt.Println("No log file found.")
+		fmt.Printf("Log path: %s\n", logPath)
 		return nil
 	}
 
@@ -299,15 +250,8 @@ func runDaemonLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if ctx.IsJSON() {
-		return ctx.Formatter.PrintJSON(map[string]interface{}{
-			"path":  logPath,
-			"lines": lines,
-		})
-	}
-
 	for _, line := range lines {
-		ctx.Formatter.Println(line)
+		fmt.Println(line)
 	}
 
 	return nil

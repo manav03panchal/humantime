@@ -53,6 +53,25 @@ Examples:
 			return nil
 		}
 
+		// Skip database initialization for daemon commands that don't need DB access
+		// The daemon holds the database lock, so status/stop/start need to work without it
+		if cmd.Parent() != nil && cmd.Parent().Name() == "daemon" {
+			switch cmd.Name() {
+			case "start":
+				if fg, _ := cmd.Flags().GetBool("foreground"); !fg {
+					// Non-foreground daemon start - skip DB init, child will handle it
+					return nil
+				}
+			case "status", "stop", "logs":
+				// These commands don't need database access
+				return nil
+			}
+		}
+		// Also skip for top-level daemon command (shows status)
+		if cmd.Name() == "daemon" && len(args) == 0 {
+			return nil
+		}
+
 		// Parse format flag
 		var format output.Format
 		switch flagFormat {
