@@ -5,74 +5,80 @@ All notable changes to Humantime will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-02-03
+
+### Breaking Changes
+
+This release simplifies Humantime to its core purpose: tracking time on projects.
+
+**Removed features:**
+- Tasks (hierarchical `project/task` syntax)
+- Goals and goal tracking
+- Reminders and notifications
+- Webhooks
+- Background daemon
+- Import command
+- Configuration file
+- Structured logging/observability
+
+**Command changes:**
+- Binary renamed from `humantime` to `ht`
+- `ht start` no longer accepts task syntax
+- `ht project delete` now archives (soft delete)
+
+### Why v1.0.0?
+
+Previous versions accumulated features that added complexity without proportional value. This release strips Humantime back to what matters:
+
+- **Projects** - Containers for your work
+- **Blocks** - Time entries with start/end times
+
+That's it. No tasks, no goals, no reminders. Just time tracking.
+
+### Migration from v0.x
+
+1. Export your data first: `humantime export -o backup.json`
+2. Install v1.0.0
+3. Your projects and blocks are preserved
+4. Tasks will need to be tracked as separate projects or via notes
 
 ### Added
+- `ht` as the primary command (shorter, faster)
+- Project archiving (soft delete)
+- User-facing documentation in `docs/`
 
-#### Error Handling Infrastructure
-- New `internal/errors` package with UserError, SystemError, and RecoverableError types
-- Error categorization and classification system
-- Context chain support for error wrapping with stack traces
-- Recovery suggestions for common error scenarios
-- Debug mode formatting for detailed error output
+### Removed
+- ~28,000 lines of code
+- Task model and commands
+- Goal model and commands
+- Reminder system
+- Webhook system
+- Daemon process
+- Config file support
+- Import command
+- Structured logging infrastructure
+- Health check endpoints
 
-#### Testing Infrastructure
-- Property-based tests for time, duration, and deadline parsers
-- Fuzz tests for parsers, validation, and logging
-- Integration tests for all major workflows (tracking, reminders, webhooks, export)
-- Edge case tests for DST, timezones, long inputs, invalid configs
-- Security tests for injection, path traversal, and credential masking
-- Performance benchmarks for startup, memory, and database operations
+---
 
-#### Security Hardening
-- Input sanitization functions in `internal/validate/sanitize.go`
-- Webhook URL validation (SSRF protection, HTTPS enforcement)
-- Path traversal detection and prevention
-- Sensitive data masking in logs (tokens, secrets, URLs)
-- File permission enforcement (0600 for data, 0700 for dirs)
+## Previous Releases (v0.x)
 
-#### Observability
-- Structured logging with slog in `internal/logging`
-- Request ID correlation for tracing operations
-- Health check endpoint with JSON output
-- In-memory metrics tracking (notifications, reminders, errors)
-- Debug trace output with timing information
+The v0.x series is available on the `legacy` branch. These versions included additional features that have been removed in v1.0.0.
 
-#### Reliability
-- Database integrity checking on startup
-- Atomic write operations to prevent data corruption
-- File-based locking for concurrent access prevention
-- Retry queue with exponential backoff for webhook failures
-- Disk space checking before write operations
+### [0.4.3] - 2026-01-xx
+- Last release before simplification
 
-### Changed
-- Relaxed performance test thresholds for CI environments
-- Improved error messages with consistent format (what + why + how to fix)
-
-### Fixed
-- Various edge cases in parser error handling
-- Timeout handling for external HTTP requests
-
-## [0.3.0] - 2026-01-08
-
-### Added
+### [0.3.0] - 2026-01-08
 - Reminder system with daemon-based notifications
 - Discord and generic webhook integrations
 - Natural language deadline parsing
-- Recurring reminder support
 
-## [0.2.0] - 2025-12-15
-
-### Added
+### [0.2.0] - 2025-12-15
 - Project and task management
 - Time block editing and deletion
 - Export to JSON and CSV formats
-- Import from JSON and CSV
 
-## [0.1.0] - 2025-11-01
-
-### Added
+### [0.1.0] - 2025-11-01
 - Initial release
 - Basic time tracking (start/stop)
 - Project creation
-- Simple stats and blocks listing
