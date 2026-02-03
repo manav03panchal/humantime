@@ -41,19 +41,17 @@ func (r *ReminderRepo) Get(key string) (*model.Reminder, error) {
 }
 
 // GetByShortID retrieves a reminder by short ID prefix match.
+// Uses filtered iteration to avoid loading all reminders into memory.
 func (r *ReminderRepo) GetByShortID(shortID string) (*model.Reminder, error) {
-	reminders, err := r.List()
+	matches, err := GetFilteredByPrefix(r.db, model.PrefixReminder+":", func() *model.Reminder {
+		return &model.Reminder{}
+	}, func(rem *model.Reminder) bool {
+		return rem.ShortID() == shortID || len(rem.Key) > len(model.PrefixReminder)+1 &&
+			len(shortID) <= len(rem.Key)-len(model.PrefixReminder)-1 &&
+			rem.Key[len(model.PrefixReminder)+1:len(model.PrefixReminder)+1+len(shortID)] == shortID
+	}, 0)
 	if err != nil {
 		return nil, err
-	}
-
-	var matches []*model.Reminder
-	for _, rem := range reminders {
-		if rem.ShortID() == shortID || len(rem.Key) > len(model.PrefixReminder)+1 &&
-		   len(shortID) <= len(rem.Key)-len(model.PrefixReminder)-1 &&
-		   rem.Key[len(model.PrefixReminder)+1:len(model.PrefixReminder)+1+len(shortID)] == shortID {
-			matches = append(matches, rem)
-		}
 	}
 
 	if len(matches) == 0 {
@@ -75,18 +73,21 @@ func (e *AmbiguousMatchError) Error() string {
 }
 
 // GetByTitle retrieves a reminder by exact title match.
+// Uses filtered iteration with early termination to avoid loading all reminders.
 func (r *ReminderRepo) GetByTitle(title string) (*model.Reminder, error) {
-	reminders, err := r.List()
+	matches, err := GetFilteredByPrefix(r.db, model.PrefixReminder+":", func() *model.Reminder {
+		return &model.Reminder{}
+	}, func(rem *model.Reminder) bool {
+		return rem.Title == title
+	}, 1) // Limit to 1 - stop after first match
 	if err != nil {
 		return nil, err
 	}
 
-	for _, rem := range reminders {
-		if rem.Title == title {
-			return rem, nil
-		}
+	if len(matches) == 0 {
+		return nil, ErrKeyNotFound
 	}
-	return nil, ErrKeyNotFound
+	return matches[0], nil
 }
 
 // List retrieves all reminders.
@@ -97,51 +98,33 @@ func (r *ReminderRepo) List() ([]*model.Reminder, error) {
 }
 
 // ListPending retrieves all pending (not completed) reminders.
+// Uses filtered iteration to avoid loading all reminders into memory.
 func (r *ReminderRepo) ListPending() ([]*model.Reminder, error) {
-	all, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var pending []*model.Reminder
-	for _, rem := range all {
-		if rem.IsPending() {
-			pending = append(pending, rem)
-		}
-	}
-	return pending, nil
+	return GetFilteredByPrefix(r.db, model.PrefixReminder+":", func() *model.Reminder {
+		return &model.Reminder{}
+	}, func(rem *model.Reminder) bool {
+		return rem.IsPending()
+	}, 0)
 }
 
 // ListDue retrieves reminders due within the given duration.
+// Uses filtered iteration to avoid loading all reminders into memory.
 func (r *ReminderRepo) ListDue(within time.Duration) ([]*model.Reminder, error) {
-	pending, err := r.ListPending()
-	if err != nil {
-		return nil, err
-	}
-
-	var due []*model.Reminder
-	for _, rem := range pending {
-		if rem.IsDueWithin(within) {
-			due = append(due, rem)
-		}
-	}
-	return due, nil
+	return GetFilteredByPrefix(r.db, model.PrefixReminder+":", func() *model.Reminder {
+		return &model.Reminder{}
+	}, func(rem *model.Reminder) bool {
+		return rem.IsPending() && rem.IsDueWithin(within)
+	}, 0)
 }
 
 // ListByProject retrieves all reminders for a project.
+// Uses filtered iteration to avoid loading all reminders into memory.
 func (r *ReminderRepo) ListByProject(projectSID string) ([]*model.Reminder, error) {
-	all, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var result []*model.Reminder
-	for _, rem := range all {
-		if rem.ProjectSID == projectSID {
-			result = append(result, rem)
-		}
-	}
-	return result, nil
+	return GetFilteredByPrefix(r.db, model.PrefixReminder+":", func() *model.Reminder {
+		return &model.Reminder{}
+	}, func(rem *model.Reminder) bool {
+		return rem.ProjectSID == projectSID
+	}, 0)
 }
 
 // Update updates an existing reminder.

@@ -31,23 +31,19 @@ func (r *TaskRepo) Get(projectSID, taskSID string) (*model.Task, error) {
 }
 
 // GetOrCreate retrieves a task, creating it if it doesn't exist.
+// This operation is atomic to prevent race conditions.
 func (r *TaskRepo) GetOrCreate(projectSID, taskSID, displayName string) (*model.Task, bool, error) {
-	task, err := r.Get(projectSID, taskSID)
-	if err == nil {
-		return task, false, nil
-	}
+	key := model.GenerateTaskKey(projectSID, taskSID)
+	existing := &model.Task{}
 
-	if !IsErrKeyNotFound(err) {
+	result, created, err := r.db.GetOrCreate(key, existing, func() model.Model {
+		return model.NewTask(projectSID, taskSID, displayName, "")
+	})
+	if err != nil {
 		return nil, false, err
 	}
 
-	// Create new task
-	task = model.NewTask(projectSID, taskSID, displayName, "")
-	if err := r.Create(task); err != nil {
-		return nil, false, err
-	}
-
-	return task, true, nil
+	return result.(*model.Task), created, nil
 }
 
 // Update updates an existing task.

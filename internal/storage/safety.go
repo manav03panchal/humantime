@@ -5,14 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/manav03panchal/humantime/internal/config"
 	"github.com/manav03panchal/humantime/internal/errors"
-)
-
-const (
-	// MinFreeSpace is the minimum free space required for write operations (10MB).
-	MinFreeSpace = 10 * 1024 * 1024
-	// MinFreeSpaceWarning is the threshold for warning about low disk space (50MB).
-	MinFreeSpaceWarning = 50 * 1024 * 1024
 )
 
 // DiskSpaceInfo contains information about available disk space.
@@ -32,7 +26,7 @@ func (d *DiskSpaceInfo) FreePercent() float64 {
 }
 
 // CheckDiskSpace checks if there's enough disk space at the given path.
-// Returns an error if free space is below MinFreeSpace.
+// Returns an error if free space is below MinFreeSpace from config.
 func CheckDiskSpace(path string) error {
 	info, err := GetDiskSpace(path)
 	if err != nil {
@@ -40,11 +34,12 @@ func CheckDiskSpace(path string) error {
 		return nil
 	}
 
-	if info.FreeBytes < MinFreeSpace {
+	minFreeSpace := config.Global.Storage.MinFreeSpace
+	if info.FreeBytes < minFreeSpace {
 		return errors.NewSystemError(
 			fmt.Sprintf("insufficient disk space: %d MB free, need at least %d MB",
 				info.FreeBytes/(1024*1024),
-				MinFreeSpace/(1024*1024)),
+				minFreeSpace/(1024*1024)),
 			errors.ErrDiskFull,
 		)
 	}
@@ -60,7 +55,8 @@ func CheckDiskSpaceWarning(path string) string {
 		return ""
 	}
 
-	if info.FreeBytes < MinFreeSpaceWarning {
+	minFreeSpaceWarning := config.Global.Storage.MinFreeSpaceWarning
+	if info.FreeBytes < minFreeSpaceWarning {
 		return fmt.Sprintf("Warning: Low disk space (%d MB free)", info.FreeBytes/(1024*1024))
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/manav03panchal/humantime/internal/logging"
 	"github.com/manav03panchal/humantime/internal/model"
 	"github.com/manav03panchal/humantime/internal/notify"
 	"github.com/manav03panchal/humantime/internal/parser"
@@ -40,7 +41,7 @@ func (c *ReminderChecker) Check() {
 	reminders, err := c.reminderRepo.ListPending()
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to list reminders: %v\n", err)
+			logging.DebugLog("failed to list reminders", logging.KeyError, err)
 		}
 		return
 	}
@@ -192,9 +193,9 @@ func (c *ReminderChecker) sendNotifications(notifications []*model.Notification)
 		if c.debug {
 			for _, result := range results {
 				if result.Success {
-					fmt.Printf("[DEBUG] Sent reminder notification to %s\n", result.WebhookName)
+					logging.DebugLog("sent reminder notification", logging.KeyWebhook, result.WebhookName)
 				} else {
-					fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+					logging.DebugLog("failed to send reminder notification", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 				}
 			}
 		}

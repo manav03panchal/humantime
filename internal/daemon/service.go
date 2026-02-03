@@ -9,6 +9,7 @@ import (
 	"text/template"
 
 	"github.com/adrg/xdg"
+	"github.com/manav03panchal/humantime/internal/logging"
 )
 
 // ServiceManager handles system service installation.
@@ -148,7 +149,7 @@ func (m *ServiceManager) installLaunchd() error {
 	}
 
 	if m.debug {
-		fmt.Printf("[DEBUG] Installed launchd service at %s\n", plistPath)
+		logging.DebugLog("installed launchd service", "path", plistPath)
 	}
 
 	return nil
@@ -167,7 +168,7 @@ func (m *ServiceManager) uninstallLaunchd() error {
 	}
 
 	if m.debug {
-		fmt.Printf("[DEBUG] Uninstalled launchd service from %s\n", plistPath)
+		logging.DebugLog("uninstalled launchd service", "path", plistPath)
 	}
 
 	return nil
@@ -260,7 +261,7 @@ func (m *ServiceManager) installSystemd() error {
 	}
 
 	if m.debug {
-		fmt.Printf("[DEBUG] Installed systemd user service at %s\n", unitPath)
+		logging.DebugLog("installed systemd user service", "path", unitPath)
 	}
 
 	return nil
@@ -287,7 +288,7 @@ func (m *ServiceManager) uninstallSystemd() error {
 	cmd.Run() // Ignore reload errors
 
 	if m.debug {
-		fmt.Printf("[DEBUG] Uninstalled systemd user service from %s\n", unitPath)
+		logging.DebugLog("uninstalled systemd user service", "path", unitPath)
 	}
 
 	return nil

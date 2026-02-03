@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/manav03panchal/humantime/internal/config"
 	"github.com/manav03panchal/humantime/internal/logging"
 )
 
@@ -48,7 +49,7 @@ func NewRetryQueue(client *HTTPClient) *RetryQueue {
 		client:   client,
 		ctx:      ctx,
 		cancel:   cancel,
-		interval: 30 * time.Second, // Check queue every 30 seconds
+		interval: config.Global.RetryQueue.CheckInterval,
 	}
 }
 
@@ -232,15 +233,9 @@ func (q *RetryQueue) processNotification(n *QueuedNotification) {
 }
 
 // calculateBackoff returns the backoff duration for the given attempt number.
-// Uses exponential backoff: 5s, 30s, 2m, 5m, 15m (capped)
+// Uses configurable exponential backoff schedule from config.
 func calculateBackoff(attempt int) time.Duration {
-	backoffs := []time.Duration{
-		5 * time.Second,
-		30 * time.Second,
-		2 * time.Minute,
-		5 * time.Minute,
-		15 * time.Minute,
-	}
+	backoffs := config.Global.RetryQueue.BackoffSchedule
 
 	if attempt >= len(backoffs) {
 		return backoffs[len(backoffs)-1]

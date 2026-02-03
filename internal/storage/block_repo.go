@@ -56,46 +56,31 @@ func (r *BlockRepo) List() ([]*model.Block, error) {
 }
 
 // ListByProject retrieves all blocks for a specific project.
+// Uses filtered iteration to avoid loading all blocks into memory.
 func (r *BlockRepo) ListByProject(projectSID string) ([]*model.Block, error) {
-	blocks, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*model.Block
-	for _, b := range blocks {
-		if b.ProjectSID == projectSID {
-			filtered = append(filtered, b)
-		}
-	}
-	return filtered, nil
+	return GetFilteredByPrefix(r.db, model.PrefixBlock+":", func() *model.Block {
+		return &model.Block{}
+	}, func(b *model.Block) bool {
+		return b.ProjectSID == projectSID
+	}, 0)
 }
 
 // ListByProjectAndTask retrieves all blocks for a specific project and task.
+// Uses filtered iteration to avoid loading all blocks into memory.
 func (r *BlockRepo) ListByProjectAndTask(projectSID, taskSID string) ([]*model.Block, error) {
-	blocks, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*model.Block
-	for _, b := range blocks {
-		if b.ProjectSID == projectSID && b.TaskSID == taskSID {
-			filtered = append(filtered, b)
-		}
-	}
-	return filtered, nil
+	return GetFilteredByPrefix(r.db, model.PrefixBlock+":", func() *model.Block {
+		return &model.Block{}
+	}, func(b *model.Block) bool {
+		return b.ProjectSID == projectSID && b.TaskSID == taskSID
+	}, 0)
 }
 
 // ListByTimeRange retrieves blocks within a time range.
+// Uses filtered iteration to avoid loading all blocks into memory.
 func (r *BlockRepo) ListByTimeRange(start, end time.Time) ([]*model.Block, error) {
-	blocks, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*model.Block
-	for _, b := range blocks {
+	return GetFilteredByPrefix(r.db, model.PrefixBlock+":", func() *model.Block {
+		return &model.Block{}
+	}, func(b *model.Block) bool {
 		// Block overlaps with range if:
 		// - Block starts before range ends AND
 		// - Block ends after range starts (or is still active)
@@ -103,12 +88,8 @@ func (r *BlockRepo) ListByTimeRange(start, end time.Time) ([]*model.Block, error
 		if blockEnd.IsZero() {
 			blockEnd = time.Now()
 		}
-
-		if b.TimestampStart.Before(end) && blockEnd.After(start) {
-			filtered = append(filtered, b)
-		}
-	}
-	return filtered, nil
+		return b.TimestampStart.Before(end) && blockEnd.After(start)
+	}, 0)
 }
 
 // BlockFilter defines filtering criteria for blocks.
@@ -122,32 +103,29 @@ type BlockFilter struct {
 }
 
 // ListFiltered retrieves blocks matching the filter criteria.
+// Uses filtered iteration to avoid loading all blocks into memory before filtering.
+// Note: Sorting is still done in memory since BadgerDB uses lexicographical key order.
 func (r *BlockRepo) ListFiltered(filter BlockFilter) ([]*model.Block, error) {
-	blocks, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*model.Block
-	for _, b := range blocks {
+	// Build filter function from criteria
+	filterFunc := func(b *model.Block) bool {
 		// Apply project filter
 		if filter.ProjectSID != "" && b.ProjectSID != filter.ProjectSID {
-			continue
+			return false
 		}
 
 		// Apply task filter
 		if filter.TaskSID != "" && b.TaskSID != filter.TaskSID {
-			continue
+			return false
 		}
 
 		// Apply tag filter
 		if filter.Tag != "" && !b.HasTag(filter.Tag) {
-			continue
+			return false
 		}
 
 		// Apply time range filters
 		if !filter.StartAfter.IsZero() && b.TimestampStart.Before(filter.StartAfter) {
-			continue
+			return false
 		}
 
 		blockEnd := b.TimestampEnd
@@ -155,10 +133,18 @@ func (r *BlockRepo) ListFiltered(filter BlockFilter) ([]*model.Block, error) {
 			blockEnd = time.Now()
 		}
 		if !filter.EndBefore.IsZero() && blockEnd.After(filter.EndBefore) {
-			continue
+			return false
 		}
 
-		filtered = append(filtered, b)
+		return true
+	}
+
+	// Use filtered iteration - can't apply limit here since we need to sort first
+	filtered, err := GetFilteredByPrefix(r.db, model.PrefixBlock+":", func() *model.Block {
+		return &model.Block{}
+	}, filterFunc, 0)
+	if err != nil {
+		return nil, err
 	}
 
 	// Sort by start time (newest first)
@@ -166,7 +152,7 @@ func (r *BlockRepo) ListFiltered(filter BlockFilter) ([]*model.Block, error) {
 		return filtered[i].TimestampStart.After(filtered[j].TimestampStart)
 	})
 
-	// Apply limit
+	// Apply limit after sorting
 	if filter.Limit > 0 && len(filtered) > filter.Limit {
 		filtered = filtered[:filter.Limit]
 	}

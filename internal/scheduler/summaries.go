@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/manav03panchal/humantime/internal/logging"
 	"github.com/manav03panchal/humantime/internal/model"
 	"github.com/manav03panchal/humantime/internal/notify"
 	"github.com/manav03panchal/humantime/internal/storage"
@@ -53,7 +54,7 @@ func (g *SummaryGenerator) CheckDailySummary() {
 	config, err := g.notifyConfigRepo.Get()
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Failed to get notify config: %v\n", err)
+			logging.DebugLog("failed to get notify config", logging.KeyError, err)
 		}
 		return
 	}
@@ -61,7 +62,7 @@ func (g *SummaryGenerator) CheckDailySummary() {
 	// Check if daily summary is enabled
 	if !config.IsTypeEnabled("daily_summary") || config.DailySummaryAt == "" {
 		if g.debug {
-			fmt.Println("[DEBUG] Daily summary disabled")
+			logging.DebugLog("daily summary disabled")
 		}
 		return
 	}
@@ -70,7 +71,7 @@ func (g *SummaryGenerator) CheckDailySummary() {
 	targetTime, err := parseTimeOfDay(config.DailySummaryAt)
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Invalid daily_summary_at time: %v\n", err)
+			logging.DebugLog("invalid daily_summary_at time", logging.KeyError, err)
 		}
 		return
 	}
@@ -90,7 +91,7 @@ func (g *SummaryGenerator) CheckEndOfDay() {
 	config, err := g.notifyConfigRepo.Get()
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Failed to get notify config: %v\n", err)
+			logging.DebugLog("failed to get notify config", logging.KeyError, err)
 		}
 		return
 	}
@@ -98,7 +99,7 @@ func (g *SummaryGenerator) CheckEndOfDay() {
 	// Check if end-of-day is enabled
 	if !config.IsTypeEnabled("end_of_day") || config.EndOfDayAt == "" {
 		if g.debug {
-			fmt.Println("[DEBUG] End-of-day recap disabled")
+			logging.DebugLog("end-of-day recap disabled")
 		}
 		return
 	}
@@ -107,7 +108,7 @@ func (g *SummaryGenerator) CheckEndOfDay() {
 	targetTime, err := parseTimeOfDay(config.EndOfDayAt)
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Invalid end_of_day_at time: %v\n", err)
+			logging.DebugLog("invalid end_of_day_at time", logging.KeyError, err)
 		}
 		return
 	}
@@ -158,7 +159,7 @@ func (g *SummaryGenerator) sendDailySummary() {
 	blocks, err := g.blockRepo.ListByTimeRange(startOfYesterday, endOfYesterday)
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Failed to get yesterday's blocks: %v\n", err)
+			logging.DebugLog("failed to get yesterday's blocks", logging.KeyError, err)
 		}
 		return
 	}
@@ -169,7 +170,7 @@ func (g *SummaryGenerator) sendDailySummary() {
 	// Get today's reminders
 	todayReminders, err := g.getTodayReminders()
 	if err != nil && g.debug {
-		fmt.Printf("[DEBUG] Failed to get today's reminders: %v\n", err)
+		logging.DebugLog("failed to get today's reminders", logging.KeyError, err)
 	}
 
 	// Build notification
@@ -219,9 +220,9 @@ func (g *SummaryGenerator) sendDailySummary() {
 	if g.debug {
 		for _, result := range results {
 			if result.Success {
-				fmt.Printf("[DEBUG] Sent daily summary to %s\n", result.WebhookName)
+				logging.DebugLog("sent daily summary", logging.KeyWebhook, result.WebhookName)
 			} else {
-				fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+				logging.DebugLog("failed to send daily summary", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 			}
 		}
 	}
@@ -236,7 +237,7 @@ func (g *SummaryGenerator) sendEndOfDayRecap() {
 	blocks, err := g.blockRepo.ListByTimeRange(startOfToday, now)
 	if err != nil {
 		if g.debug {
-			fmt.Printf("[DEBUG] Failed to get today's blocks: %v\n", err)
+			logging.DebugLog("failed to get today's blocks", logging.KeyError, err)
 		}
 		return
 	}
@@ -247,7 +248,7 @@ func (g *SummaryGenerator) sendEndOfDayRecap() {
 	// Get tomorrow's reminders
 	tomorrowReminders, err := g.getTomorrowReminders()
 	if err != nil && g.debug {
-		fmt.Printf("[DEBUG] Failed to get tomorrow's reminders: %v\n", err)
+		logging.DebugLog("failed to get tomorrow's reminders", logging.KeyError, err)
 	}
 
 	// Get goal status
@@ -315,9 +316,9 @@ func (g *SummaryGenerator) sendEndOfDayRecap() {
 	if g.debug {
 		for _, result := range results {
 			if result.Success {
-				fmt.Printf("[DEBUG] Sent end-of-day recap to %s\n", result.WebhookName)
+				logging.DebugLog("sent end-of-day recap", logging.KeyWebhook, result.WebhookName)
 			} else {
-				fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+				logging.DebugLog("failed to send end-of-day recap", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 			}
 		}
 	}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/manav03panchal/humantime/internal/config"
+	"github.com/manav03panchal/humantime/internal/logging"
 	"github.com/manav03panchal/humantime/internal/model"
 	"github.com/manav03panchal/humantime/internal/notify"
 	"github.com/manav03panchal/humantime/internal/storage"
@@ -45,18 +47,18 @@ func (c *IdleChecker) SetDebug(debug bool) {
 // Check checks for idle status and sends notification if needed.
 func (c *IdleChecker) Check() {
 	// Get notification config
-	config, err := c.notifyConfigRepo.Get()
+	notifyConfig, err := c.notifyConfigRepo.Get()
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to get notify config: %v\n", err)
+			logging.DebugLog("failed to get notify config", logging.KeyError, err)
 		}
 		return
 	}
 
 	// Check if idle notifications are enabled
-	if !config.IsTypeEnabled("idle") {
+	if !notifyConfig.IsTypeEnabled("idle") {
 		if c.debug {
-			fmt.Println("[DEBUG] Idle notifications disabled")
+			logging.DebugLog("idle notifications disabled")
 		}
 		return
 	}
@@ -66,7 +68,7 @@ func (c *IdleChecker) Check() {
 	if err == nil && activeBlock != nil && activeBlock.ActiveBlockKey != "" {
 		// Currently tracking, no idle notification needed
 		if c.debug {
-			fmt.Println("[DEBUG] Currently tracking, skipping idle check")
+			logging.DebugLog("currently tracking, skipping idle check")
 		}
 		return
 	}
@@ -78,7 +80,7 @@ func (c *IdleChecker) Check() {
 	blocks, err := c.blockRepo.ListByTimeRange(startOfDay, now)
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to list blocks: %v\n", err)
+			logging.DebugLog("failed to list blocks", logging.KeyError, err)
 		}
 		return
 	}
@@ -86,7 +88,7 @@ func (c *IdleChecker) Check() {
 	// Skip if no tracking occurred today (FR-012)
 	if len(blocks) == 0 {
 		if c.debug {
-			fmt.Println("[DEBUG] No tracking today, skipping idle check")
+			logging.DebugLog("no tracking today, skipping idle check")
 		}
 		return
 	}
@@ -102,24 +104,24 @@ func (c *IdleChecker) Check() {
 	// If no completed blocks, skip
 	if lastEndTime.IsZero() {
 		if c.debug {
-			fmt.Println("[DEBUG] No completed blocks today, skipping idle check")
+			logging.DebugLog("no completed blocks today, skipping idle check")
 		}
 		return
 	}
 
 	// Check if idle threshold exceeded
 	idleDuration := time.Since(lastEndTime)
-	if idleDuration < config.IdleAfter {
+	if idleDuration < notifyConfig.IdleAfter {
 		if c.debug {
-			fmt.Printf("[DEBUG] Not idle long enough: %v < %v\n", idleDuration.Round(time.Minute), config.IdleAfter)
+			logging.DebugLog("not idle long enough", "idle_duration", idleDuration.Round(time.Minute), "threshold", notifyConfig.IdleAfter)
 		}
 		return
 	}
 
-	// Check for deduplication (don't spam - at least 30 minutes between notifications)
-	if !c.lastNotified.IsZero() && time.Since(c.lastNotified) < 30*time.Minute {
+	// Check for deduplication (don't spam - use configurable cooldown)
+	if !c.lastNotified.IsZero() && time.Since(c.lastNotified) < config.Global.Scheduler.IdleNotificationCooldown {
 		if c.debug {
-			fmt.Println("[DEBUG] Already notified recently, skipping")
+			logging.DebugLog("already notified recently, skipping")
 		}
 		return
 	}
@@ -163,9 +165,9 @@ func (c *IdleChecker) sendIdleNotification(idleDuration time.Duration) {
 	if c.debug {
 		for _, result := range results {
 			if result.Success {
-				fmt.Printf("[DEBUG] Sent idle notification to %s\n", result.WebhookName)
+				logging.DebugLog("sent idle notification", logging.KeyWebhook, result.WebhookName)
 			} else {
-				fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+				logging.DebugLog("failed to send idle notification", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 			}
 		}
 	}
@@ -207,18 +209,18 @@ func (c *BreakChecker) SetDebug(debug bool) {
 // Check checks for continuous work and sends break reminder if needed.
 func (c *BreakChecker) Check() {
 	// Get notification config
-	config, err := c.notifyConfigRepo.Get()
+	notifyConfig, err := c.notifyConfigRepo.Get()
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to get notify config: %v\n", err)
+			logging.DebugLog("failed to get notify config", logging.KeyError, err)
 		}
 		return
 	}
 
 	// Check if break notifications are enabled
-	if !config.IsTypeEnabled("break") || config.BreakAfter == 0 {
+	if !notifyConfig.IsTypeEnabled("break") || notifyConfig.BreakAfter == 0 {
 		if c.debug {
-			fmt.Println("[DEBUG] Break notifications disabled")
+			logging.DebugLog("break notifications disabled")
 		}
 		return
 	}
@@ -230,7 +232,7 @@ func (c *BreakChecker) Check() {
 	blocks, err := c.blockRepo.ListByTimeRange(startOfDay, now)
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to list blocks: %v\n", err)
+			logging.DebugLog("failed to list blocks", logging.KeyError, err)
 		}
 		return
 	}
@@ -242,11 +244,11 @@ func (c *BreakChecker) Check() {
 
 	// Calculate continuous session time
 	// A session is continuous if gaps between blocks are less than BreakReset
-	continuousStart, continuousDuration := c.calculateContinuousSession(blocks, config.BreakReset, now)
+	continuousStart, continuousDuration := c.calculateContinuousSession(blocks, notifyConfig.BreakReset, now)
 
-	if continuousDuration < config.BreakAfter {
+	if continuousDuration < notifyConfig.BreakAfter {
 		if c.debug {
-			fmt.Printf("[DEBUG] Not working long enough: %v < %v\n", continuousDuration.Round(time.Minute), config.BreakAfter)
+			logging.DebugLog("not working long enough", "duration", continuousDuration.Round(time.Minute), "threshold", notifyConfig.BreakAfter)
 		}
 		return
 	}
@@ -254,7 +256,7 @@ func (c *BreakChecker) Check() {
 	// Check for deduplication (notify at most once per session)
 	if !c.lastNotified.IsZero() && c.lastNotified.After(continuousStart) {
 		if c.debug {
-			fmt.Println("[DEBUG] Already notified for this session")
+			logging.DebugLog("already notified for this session")
 		}
 		return
 	}
@@ -359,9 +361,9 @@ func (c *BreakChecker) sendBreakNotification(duration time.Duration, projectName
 	if c.debug {
 		for _, result := range results {
 			if result.Success {
-				fmt.Printf("[DEBUG] Sent break notification to %s\n", result.WebhookName)
+				logging.DebugLog("sent break notification", logging.KeyWebhook, result.WebhookName)
 			} else {
-				fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+				logging.DebugLog("failed to send break notification", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 			}
 		}
 	}
@@ -369,13 +371,13 @@ func (c *BreakChecker) sendBreakNotification(duration time.Duration, projectName
 
 // GoalChecker checks for goal progress and sends milestone notifications.
 type GoalChecker struct {
-	blockRepo        *storage.BlockRepo
-	goalRepo         *storage.GoalRepo
-	webhookRepo      *storage.WebhookRepo
-	notifyConfigRepo *storage.NotifyConfigRepo
-	dispatcher       *notify.Dispatcher
+	blockRepo          *storage.BlockRepo
+	goalRepo           *storage.GoalRepo
+	webhookRepo        *storage.WebhookRepo
+	notifyConfigRepo   *storage.NotifyConfigRepo
+	dispatcher         *notify.Dispatcher
 	notifiedMilestones map[string]map[int]time.Time // project -> milestone -> last notified
-	debug            bool
+	debug              bool
 }
 
 // NewGoalChecker creates a new goal checker.
@@ -403,18 +405,18 @@ func (c *GoalChecker) SetDebug(debug bool) {
 // Check checks goal progress and sends milestone notifications.
 func (c *GoalChecker) Check() {
 	// Get notification config
-	config, err := c.notifyConfigRepo.Get()
+	notifyConfig, err := c.notifyConfigRepo.Get()
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to get notify config: %v\n", err)
+			logging.DebugLog("failed to get notify config", logging.KeyError, err)
 		}
 		return
 	}
 
 	// Check if goal notifications are enabled
-	if !config.IsTypeEnabled("goal") {
+	if !notifyConfig.IsTypeEnabled("goal") {
 		if c.debug {
-			fmt.Println("[DEBUG] Goal notifications disabled")
+			logging.DebugLog("goal notifications disabled")
 		}
 		return
 	}
@@ -423,7 +425,7 @@ func (c *GoalChecker) Check() {
 	goals, err := c.goalRepo.List()
 	if err != nil {
 		if c.debug {
-			fmt.Printf("[DEBUG] Failed to list goals: %v\n", err)
+			logging.DebugLog("failed to list goals", logging.KeyError, err)
 		}
 		return
 	}
@@ -445,7 +447,7 @@ func (c *GoalChecker) Check() {
 
 	// Check each goal
 	for _, goal := range goals {
-		c.checkGoal(goal, config, startOfDay, startOfWeek, now)
+		c.checkGoal(goal, notifyConfig, startOfDay, startOfWeek, now)
 	}
 
 	// Reset old milestone notifications (at day/week boundaries)
@@ -453,7 +455,7 @@ func (c *GoalChecker) Check() {
 }
 
 // checkGoal checks a single goal for milestone notifications.
-func (c *GoalChecker) checkGoal(goal *model.Goal, config *model.NotifyConfig, startOfDay, startOfWeek, now time.Time) {
+func (c *GoalChecker) checkGoal(goal *model.Goal, notifyConfig *model.NotifyConfig, startOfDay, startOfWeek, now time.Time) {
 	var start time.Time
 	switch goal.Type {
 	case model.GoalTypeDaily:
@@ -492,7 +494,7 @@ func (c *GoalChecker) checkGoal(goal *model.Goal, config *model.NotifyConfig, st
 	progress := int(float64(totalDuration) / float64(targetDuration) * 100)
 
 	// Check milestones
-	for _, milestone := range config.GoalMilestones {
+	for _, milestone := range notifyConfig.GoalMilestones {
 		if progress >= milestone && !c.wasNotified(goal.ProjectSID, milestone) {
 			c.sendGoalNotification(goal, milestone, totalDuration, targetDuration)
 			c.markNotified(goal.ProjectSID, milestone)
@@ -566,9 +568,9 @@ func (c *GoalChecker) sendGoalNotification(goal *model.Goal, milestone int, curr
 	if c.debug {
 		for _, result := range results {
 			if result.Success {
-				fmt.Printf("[DEBUG] Sent goal notification to %s\n", result.WebhookName)
+				logging.DebugLog("sent goal notification", logging.KeyWebhook, result.WebhookName)
 			} else {
-				fmt.Printf("[DEBUG] Failed to send to %s: %v\n", result.WebhookName, result.Error)
+				logging.DebugLog("failed to send goal notification", logging.KeyWebhook, result.WebhookName, logging.KeyError, result.Error)
 			}
 		}
 	}

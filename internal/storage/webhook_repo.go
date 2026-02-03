@@ -54,19 +54,13 @@ func (r *WebhookRepo) List() ([]*model.Webhook, error) {
 }
 
 // ListEnabled retrieves all enabled webhooks.
+// Uses filtered iteration to avoid loading all webhooks into memory.
 func (r *WebhookRepo) ListEnabled() ([]*model.Webhook, error) {
-	all, err := r.List()
-	if err != nil {
-		return nil, err
-	}
-
-	var enabled []*model.Webhook
-	for _, wh := range all {
-		if wh.IsEnabled() {
-			enabled = append(enabled, wh)
-		}
-	}
-	return enabled, nil
+	return GetFilteredByPrefix(r.db, model.PrefixWebhook+":", func() *model.Webhook {
+		return &model.Webhook{}
+	}, func(wh *model.Webhook) bool {
+		return wh.IsEnabled()
+	}, 0)
 }
 
 // Update updates an existing webhook.

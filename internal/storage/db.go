@@ -8,6 +8,7 @@ import (
 
 	"github.com/adrg/xdg"
 	badger "github.com/dgraph-io/badger/v4"
+	"github.com/manav03panchal/humantime/internal/logging"
 )
 
 const (
@@ -115,7 +116,7 @@ func OpenWithIntegrityCheck(opts Options) (*DB, error) {
 	if err := db.CheckIntegrity(); err != nil {
 		// Log the issue but don't fail - the app can still function
 		// with a potentially degraded database
-		_ = err // Logged elsewhere if needed
+		logging.Warn("database integrity check failed", logging.KeyError, err)
 	}
 
 	return db, nil

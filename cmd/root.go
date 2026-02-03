@@ -48,9 +48,9 @@ Examples:
   humantime blocks this week
   humantime stats on clientwork from last month`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip initialization for completion and help commands
-		if cmd.Name() == "completion" || cmd.Name() == "help" ||
-			cmd.Name() == "__complete" || cmd.Name() == "__completeNoDesc" {
+		// Skip initialization for commands that don't need database access
+		switch cmd.Name() {
+		case "completion", "help", "version", "__complete", "__completeNoDesc":
 			return nil
 		}
 

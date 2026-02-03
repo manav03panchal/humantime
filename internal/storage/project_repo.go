@@ -31,23 +31,19 @@ func (r *ProjectRepo) Get(sid string) (*model.Project, error) {
 }
 
 // GetOrCreate retrieves a project by SID, creating it if it doesn't exist.
+// This operation is atomic to prevent race conditions.
 func (r *ProjectRepo) GetOrCreate(sid, displayName string) (*model.Project, bool, error) {
-	project, err := r.Get(sid)
-	if err == nil {
-		return project, false, nil
-	}
+	key := model.GenerateProjectKey(sid)
+	existing := &model.Project{}
 
-	if !IsErrKeyNotFound(err) {
+	result, created, err := r.db.GetOrCreate(key, existing, func() model.Model {
+		return model.NewProject(sid, displayName, "")
+	})
+	if err != nil {
 		return nil, false, err
 	}
 
-	// Create new project
-	project = model.NewProject(sid, displayName, "")
-	if err := r.Create(project); err != nil {
-		return nil, false, err
-	}
-
-	return project, true, nil
+	return result.(*model.Project), created, nil
 }
 
 // Update updates an existing project.

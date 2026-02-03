@@ -8,6 +8,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/manav03panchal/humantime/internal/config"
+	"github.com/manav03panchal/humantime/internal/logging"
 	"github.com/manav03panchal/humantime/internal/storage"
 )
 
@@ -117,7 +119,7 @@ func (s *Scheduler) Start() error {
 	s.cron.Start()
 
 	if s.debug {
-		fmt.Println("[DEBUG] Scheduler started")
+		logging.DebugLog("scheduler started")
 	}
 
 	return nil
@@ -130,7 +132,7 @@ func (s *Scheduler) Stop() {
 		<-ctx.Done()
 	}
 	if s.debug {
-		fmt.Println("[DEBUG] Scheduler stopped")
+		logging.DebugLog("scheduler stopped")
 	}
 }
 
@@ -141,16 +143,16 @@ func (s *Scheduler) runMinuteChecks() {
 	s.lastCheck = time.Now()
 	s.mu.Unlock()
 
-	// Skip if system was sleeping (gap > 1 hour)
-	if elapsed > time.Hour {
+	// Skip if system was sleeping (gap > configurable threshold)
+	if elapsed > config.Global.Scheduler.SleepThreshold {
 		if s.debug {
-			fmt.Printf("[DEBUG] Skipping stale checks after %v sleep\n", elapsed.Round(time.Second))
+			logging.DebugLog("skipping stale checks after sleep", "elapsed", elapsed.Round(time.Second))
 		}
 		return
 	}
 
 	if s.debug {
-		fmt.Printf("[DEBUG] Running minute checks (elapsed: %v)\n", elapsed.Round(time.Second))
+		logging.DebugLog("running minute checks", "elapsed", elapsed.Round(time.Second))
 	}
 
 	// Run checks
@@ -164,7 +166,7 @@ func (s *Scheduler) runMinuteChecks() {
 // runFiveMinuteChecks runs checks that happen every 5 minutes.
 func (s *Scheduler) runFiveMinuteChecks() {
 	if s.debug {
-		fmt.Println("[DEBUG] Running 5-minute checks")
+		logging.DebugLog("running 5-minute checks")
 	}
 
 	// Goal progress checks (implemented in Phase 9)
@@ -177,7 +179,7 @@ func (s *Scheduler) checkReminders() {
 		return
 	}
 	if s.debug {
-		fmt.Println("[DEBUG] Checking reminders...")
+		logging.DebugLog("checking reminders")
 	}
 	s.reminderChecker.Check()
 }
@@ -188,7 +190,7 @@ func (s *Scheduler) checkIdle() {
 		return
 	}
 	if s.debug {
-		fmt.Println("[DEBUG] Checking idle status...")
+		logging.DebugLog("checking idle status")
 	}
 	s.idleChecker.Check()
 }
@@ -199,7 +201,7 @@ func (s *Scheduler) checkBreak() {
 		return
 	}
 	if s.debug {
-		fmt.Println("[DEBUG] Checking break status...")
+		logging.DebugLog("checking break status")
 	}
 	s.breakChecker.Check()
 }
@@ -210,7 +212,7 @@ func (s *Scheduler) checkGoalProgress() {
 		return
 	}
 	if s.debug {
-		fmt.Println("[DEBUG] Checking goal progress...")
+		logging.DebugLog("checking goal progress")
 	}
 	s.goalChecker.Check()
 }

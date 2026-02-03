@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/manav03panchal/humantime/internal/config"
+	"github.com/manav03panchal/humantime/internal/logging"
 )
 
 // HTTPClient handles HTTP requests with retry logic.
@@ -16,18 +19,15 @@ type HTTPClient struct {
 	retryDelay []time.Duration
 }
 
-// NewHTTPClient creates a new HTTP client with default settings.
+// NewHTTPClient creates a new HTTP client with default settings from config.
 func NewHTTPClient() *HTTPClient {
+	cfg := config.Global.HTTP
 	return &HTTPClient{
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: cfg.Timeout,
 		},
-		maxRetries: 3,
-		retryDelay: []time.Duration{
-			0,                // Immediate first attempt
-			5 * time.Second,  // Retry after 5s
-			30 * time.Second, // Retry after 30s
-		},
+		maxRetries: cfg.MaxRetries,
+		retryDelay: cfg.RetryDelays,
 	}
 }
 
@@ -76,7 +76,10 @@ func (c *HTTPClient) Send(ctx context.Context, url string, contentType string, b
 		}
 
 		// Read and close body
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logging.Warn("failed to read response body", logging.KeyError, err, "url", url)
+		}
 		resp.Body.Close()
 
 		result.StatusCode = resp.StatusCode

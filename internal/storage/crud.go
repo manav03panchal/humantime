@@ -133,6 +133,54 @@ func (d *DB) Exists(key string) (bool, error) {
 	return exists, err
 }
 
+// GetOrCreate atomically retrieves an existing value or creates a new one.
+// The createFunc is called only if the key doesn't exist, and should return
+// the model to be created. Returns (model, created, error).
+func (d *DB) GetOrCreate(key string, existing model.Model, createFunc func() model.Model) (model.Model, bool, error) {
+	var result model.Model
+	var created bool
+
+	err := d.db.Update(func(txn *badger.Txn) error {
+		// Try to get existing
+		item, err := txn.Get([]byte(key))
+		if err == nil {
+			// Key exists, unmarshal it
+			return item.Value(func(val []byte) error {
+				if err := json.Unmarshal(val, existing); err != nil {
+					return err
+				}
+				existing.SetKey(key)
+				result = existing
+				created = false
+				return nil
+			})
+		}
+
+		if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+
+		// Key doesn't exist, create new
+		newModel := createFunc()
+		newModel.SetKey(key)
+
+		data, err := json.Marshal(newModel)
+		if err != nil {
+			return err
+		}
+
+		if err := txn.Set([]byte(key), data); err != nil {
+			return err
+		}
+
+		result = newModel
+		created = true
+		return nil
+	})
+
+	return result, created, err
+}
+
 // ListByPrefix retrieves all keys with the given prefix.
 func (d *DB) ListByPrefix(prefix string) ([]string, error) {
 	var keys []string
@@ -182,4 +230,86 @@ func GetAllByPrefix[T model.Model](d *DB, prefix string, newFunc func() T) ([]T,
 		return nil
 	})
 	return results, err
+}
+
+// GetFilteredByPrefix retrieves values matching a filter predicate.
+// This is more efficient than GetAllByPrefix when you need to filter results,
+// as it avoids loading all records into memory before filtering.
+// The filter function receives each item and returns true to include it.
+// If limit > 0, iteration stops after collecting that many matching items.
+func GetFilteredByPrefix[T model.Model](d *DB, prefix string, newFunc func() T, filter func(T) bool, limit int) ([]T, error) {
+	var results []T
+	err := d.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = 100
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefixBytes := []byte(prefix)
+		for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				v := newFunc()
+				if err := json.Unmarshal(val, v); err != nil {
+					return err
+				}
+				v.SetKey(string(item.Key()))
+				if filter(v) {
+					results = append(results, v)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			// Check if we've hit our limit
+			if limit > 0 && len(results) >= limit {
+				break
+			}
+		}
+		return nil
+	})
+	return results, err
+}
+
+// CountByPrefix counts items matching a filter predicate without loading all values.
+// This is more efficient than loading all items when you only need a count.
+// If filter is nil, counts all items with the prefix.
+func CountByPrefix[T model.Model](d *DB, prefix string, newFunc func() T, filter func(T) bool) (int, error) {
+	count := 0
+	err := d.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		// Only prefetch values if we need to filter
+		if filter != nil {
+			opts.PrefetchSize = 100
+		} else {
+			opts.PrefetchValues = false
+		}
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefixBytes := []byte(prefix)
+		for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
+			if filter == nil {
+				count++
+				continue
+			}
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				v := newFunc()
+				if err := json.Unmarshal(val, v); err != nil {
+					return err
+				}
+				if filter(v) {
+					count++
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return count, err
 }

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/manav03panchal/humantime/internal/config"
+	"github.com/manav03panchal/humantime/internal/logging"
 	"github.com/manav03panchal/humantime/internal/scheduler"
 	"github.com/manav03panchal/humantime/internal/storage"
 )
@@ -137,13 +139,13 @@ func (d *Daemon) Start(ctx context.Context) error {
 	defer sigHandler.Cleanup()
 
 	if d.debug {
-		fmt.Printf("[DEBUG] Daemon started (PID: %d)\n", os.Getpid())
+		logging.DebugLog("daemon started", "pid", os.Getpid())
 	}
 
 	// Wait for shutdown signal
 	sig := sigHandler.Wait(ctx)
 	if d.debug && sig != nil {
-		fmt.Printf("[DEBUG] Received signal: %v\n", sig)
+		logging.DebugLog("received signal", "signal", sig.String())
 	}
 
 	// Cleanup
@@ -194,7 +196,7 @@ func (d *Daemon) StartBackground() (int, error) {
 	}
 
 	// Wait a moment for the process to start and write PID
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(config.Global.Daemon.StartupWait)
 
 	// Verify it's running
 	if !d.pidFile.IsRunning() {
@@ -265,7 +267,7 @@ func (d *Daemon) Stop() error {
 	select {
 	case <-done:
 		// Process exited
-	case <-time.After(5 * time.Second):
+	case <-time.After(config.Global.Daemon.KillTimeout):
 		// Force kill
 		process.Kill()
 	}
@@ -319,7 +321,9 @@ func (d *Daemon) readState() (*DaemonState, error) {
 
 // removeState removes the state file.
 func (d *Daemon) removeState() {
-	os.Remove(getStatePath())
+	if err := os.Remove(getStatePath()); err != nil && !os.IsNotExist(err) {
+		logging.Warn("failed to remove daemon state file", logging.KeyError, err, "path", getStatePath())
+	}
 }
 
 // GetLogPath returns the path to the daemon log file.

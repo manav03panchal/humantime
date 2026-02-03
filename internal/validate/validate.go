@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/manav03panchal/humantime/internal/errors"
+	"github.com/manav03panchal/humantime/internal/logging"
 )
 
 const (
@@ -158,7 +159,9 @@ func checkInternalIP(hostname string) error {
 	// Try to resolve hostname
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
-		// DNS resolution failed - this is OK, the webhook will fail later
+		// DNS resolution failed - log for debugging, but allow the webhook
+		// registration to proceed (it will fail at runtime if invalid)
+		logging.DebugLog("DNS resolution failed during URL validation", "hostname", hostname, logging.KeyError, err)
 		return nil
 	}
 
