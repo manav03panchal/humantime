@@ -154,16 +154,6 @@ func TestValidateAndSuggest(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("valid_deadline", func(t *testing.T) {
-		err := ValidateAndSuggest("deadline", "+1h")
-		assert.NoError(t, err)
-	})
-
-	t.Run("invalid_deadline", func(t *testing.T) {
-		err := ValidateAndSuggest("deadline", "notadeadline")
-		assert.Error(t, err)
-	})
-
 	t.Run("unknown_type", func(t *testing.T) {
 		err := ValidateAndSuggest("unknown", "anything")
 		assert.Error(t, err)

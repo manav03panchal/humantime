@@ -23,14 +23,12 @@ var importCmd = &cobra.Command{
 	Use:     "import FILE",
 	Aliases: []string{"imp", "i", "restore"},
 	Short:   "Import time data from a file",
-	Long: `Import time data from JSON files. Supports Humantime backup format
-and Zeit v1 export format.
+	Long: `Import time data from JSON files.
 
 Examples:
-  humantime import backup.json
-  humantime import zeit-export.json
-  humantime import backup.json --dry-run
-  humantime import backup.json --force`,
+  ht import backup.json
+  ht import backup.json --dry-run
+  ht import backup.json --force`,
 	Args: cobra.ExactArgs(1),
 	RunE: runImport,
 }
@@ -42,16 +40,13 @@ func init() {
 	rootCmd.AddCommand(importCmd)
 }
 
-// HumantimeBackup represents a full Humantime backup.
+// HumantimeBackup represents a Humantime backup (v2).
 type HumantimeBackup struct {
-	Version     string              `json:"version"`
-	ExportedAt  string              `json:"exported_at"`
-	Config      *model.Config       `json:"config"`
-	Projects    []*model.Project    `json:"projects"`
-	Tasks       []*model.Task       `json:"tasks"`
-	Blocks      []*model.Block      `json:"blocks"`
-	Goals       []*model.Goal       `json:"goals"`
-	ActiveBlock *model.ActiveBlock  `json:"active_block"`
+	Version     string             `json:"version"`
+	ExportedAt  string             `json:"exported_at"`
+	Projects    []*model.Project   `json:"projects"`
+	Blocks      []*model.Block     `json:"blocks"`
+	ActiveBlock *model.ActiveBlock `json:"active_block"`
 }
 
 // ZeitEntry represents a Zeit v1 time entry.
@@ -130,10 +125,7 @@ func importHumantime(data []byte, cli *output.CLIFormatter) error {
 	// Statistics
 	stats := struct {
 		Projects   int
-		Tasks      int
 		Blocks     int
-		Goals      int
-		Skipped    int
 		Duplicates int
 	}{}
 
@@ -168,31 +160,6 @@ func importHumantime(data []byte, cli *output.CLIFormatter) error {
 		stats.Projects++
 	}
 
-	// Import tasks
-	for _, t := range backup.Tasks {
-		if importFlagDryRun {
-			stats.Tasks++
-			continue
-		}
-
-		exists, _ := ctx.TaskRepo.Exists(t.ProjectSID, t.SID)
-		if exists && !importFlagForce {
-			stats.Duplicates++
-			continue
-		}
-
-		if exists {
-			if err := ctx.TaskRepo.Update(t); err != nil {
-				return fmt.Errorf("failed to update task %s/%s: %w", t.ProjectSID, t.SID, err)
-			}
-		} else {
-			if err := ctx.TaskRepo.Create(t); err != nil {
-				return fmt.Errorf("failed to create task %s/%s: %w", t.ProjectSID, t.SID, err)
-			}
-		}
-		stats.Tasks++
-	}
-
 	// Import blocks
 	for _, b := range backup.Blocks {
 		if importFlagDryRun {
@@ -221,25 +188,6 @@ func importHumantime(data []byte, cli *output.CLIFormatter) error {
 		stats.Blocks++
 	}
 
-	// Import goals
-	for _, g := range backup.Goals {
-		if importFlagDryRun {
-			stats.Goals++
-			continue
-		}
-
-		exists, _ := ctx.GoalRepo.Exists(g.ProjectSID)
-		if exists && !importFlagForce {
-			stats.Duplicates++
-			continue
-		}
-
-		if err := ctx.GoalRepo.Upsert(g); err != nil {
-			return fmt.Errorf("failed to import goal for %s: %w", g.ProjectSID, err)
-		}
-		stats.Goals++
-	}
-
 	// Print summary
 	cli.Println("")
 	if importFlagDryRun {
@@ -248,9 +196,7 @@ func importHumantime(data []byte, cli *output.CLIFormatter) error {
 		cli.Success("Import complete")
 	}
 	cli.Printf("  Projects: %d\n", stats.Projects)
-	cli.Printf("  Tasks: %d\n", stats.Tasks)
 	cli.Printf("  Blocks: %d\n", stats.Blocks)
-	cli.Printf("  Goals: %d\n", stats.Goals)
 	if stats.Duplicates > 0 {
 		cli.Printf("  Skipped (duplicates): %d\n", stats.Duplicates)
 	}
@@ -326,7 +272,15 @@ func importZeit(data []byte, cli *output.CLIFormatter) error {
 			continue
 		}
 
-		block := model.NewBlock(ctx.Config.UserKey, projectSID, entry.Task, entry.Notes, begin)
+		// Combine task and notes into the note field
+		note := entry.Notes
+		if entry.Task != "" && note != "" {
+			note = entry.Task + ": " + note
+		} else if entry.Task != "" {
+			note = entry.Task
+		}
+
+		block := model.NewBlock("", projectSID, "", note, begin)
 		if !end.IsZero() {
 			block.TimestampEnd = end
 		}

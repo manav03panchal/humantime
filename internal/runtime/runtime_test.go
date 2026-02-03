@@ -33,18 +33,11 @@ func TestNew(t *testing.T) {
 	defer ctx.Close()
 
 	assert.NotNil(t, ctx.DB)
-	assert.NotNil(t, ctx.Config)
 	assert.NotNil(t, ctx.Formatter)
 	assert.NotNil(t, ctx.BlockRepo)
 	assert.NotNil(t, ctx.ProjectRepo)
-	assert.NotNil(t, ctx.TaskRepo)
-	assert.NotNil(t, ctx.ConfigRepo)
 	assert.NotNil(t, ctx.ActiveBlockRepo)
-	assert.NotNil(t, ctx.GoalRepo)
 	assert.NotNil(t, ctx.UndoRepo)
-	assert.NotNil(t, ctx.ReminderRepo)
-	assert.NotNil(t, ctx.WebhookRepo)
-	assert.NotNil(t, ctx.NotifyConfigRepo)
 }
 
 func TestNewWithOptions(t *testing.T) {
@@ -180,10 +173,7 @@ func TestSentinelErrors(t *testing.T) {
 		ErrEndBeforeStart,
 		ErrBlockNotFound,
 		ErrProjectNotFound,
-		ErrTaskNotFound,
-		ErrGoalNotFound,
 		ErrInvalidColor,
-		ErrInvalidGoalType,
 		ErrInvalidDuration,
 		ErrDiskFull,
 	}
@@ -221,7 +211,7 @@ func TestGetSuggestion(t *testing.T) {
 	t.Run("known_error", func(t *testing.T) {
 		suggestion := GetSuggestion(ErrNoActiveTracking)
 		assert.NotEmpty(t, suggestion)
-		assert.Contains(t, suggestion, "humantime start")
+		assert.Contains(t, suggestion, "ht start")
 	})
 
 	t.Run("wrapped_error", func(t *testing.T) {
@@ -241,7 +231,7 @@ func TestFormatError(t *testing.T) {
 	t.Run("with_suggestion", func(t *testing.T) {
 		formatted := FormatError(ErrNoActiveTracking)
 		assert.Contains(t, formatted, "no active tracking")
-		assert.Contains(t, formatted, "humantime start")
+		assert.Contains(t, formatted, "ht start")
 	})
 
 	t.Run("without_suggestion", func(t *testing.T) {
@@ -261,9 +251,7 @@ func TestSuggestionsMap(t *testing.T) {
 		ErrEndBeforeStart,
 		ErrBlockNotFound,
 		ErrProjectNotFound,
-		ErrTaskNotFound,
 		ErrInvalidColor,
-		ErrInvalidGoalType,
 		ErrDiskFull,
 	}
 

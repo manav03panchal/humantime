@@ -11,6 +11,7 @@ type Project struct {
 	SID         string `json:"sid" validate:"required,max=32,sid"`
 	DisplayName string `json:"display_name" validate:"required,max=64"`
 	Color       string `json:"color,omitempty" validate:"omitempty,hexcolor"`
+	Archived    bool   `json:"archived,omitempty"`
 }
 
 // SetKey sets the database key for this project.

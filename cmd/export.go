@@ -18,7 +18,6 @@ import (
 // Export command flags.
 var (
 	exportFlagProject string
-	exportFlagTask    string
 	exportFlagFrom    string
 	exportFlagUntil   string
 	exportFlagFormat  string
@@ -28,31 +27,28 @@ var (
 
 // exportCmd represents the export command.
 var exportCmd = &cobra.Command{
-	Use:     "export [on PROJECT[/TASK]] [TIMEFRAME]",
+	Use:     "export [PROJECT] [TIMEFRAME]",
 	Aliases: []string{"ex", "x", "dump"},
 	Short:   "Export time data",
-	Long: `Export time blocks in various formats. Can export filtered blocks or
-create a full database backup.
+	Long: `Export time blocks in various formats.
 
 Examples:
-  humantime export
-  humantime export on clientwork
-  humantime export on clientwork from last month
-  humantime export --format csv -o report.csv
-  humantime export --backup -o backup.json`,
+  ht export
+  ht export clientwork
+  ht export --from "last month"
+  ht export --format csv -o report.csv
+  ht export --backup -o backup.json`,
 	RunE: runExport,
 }
 
 func init() {
 	exportCmd.Flags().StringVarP(&exportFlagProject, "project", "p", "", "Filter by project SID")
-	exportCmd.Flags().StringVarP(&exportFlagTask, "task", "t", "", "Filter by task SID")
 	exportCmd.Flags().StringVar(&exportFlagFrom, "from", "", "Start of time range")
 	exportCmd.Flags().StringVar(&exportFlagUntil, "until", "", "End of time range")
 	exportCmd.Flags().StringVarP(&exportFlagFormat, "format", "F", "json", "Output format: json, csv")
 	exportCmd.Flags().BoolVarP(&exportFlagBackup, "backup", "b", false, "Full database backup")
 	exportCmd.Flags().StringVarP(&exportFlagOutput, "output", "o", "", "Output file (stdout if omitted)")
 
-	// Dynamic completion for projects/tasks
 	exportCmd.ValidArgsFunction = completeBlocksArgs
 	exportCmd.RegisterFlagCompletionFunc("project", completeProjects)
 
@@ -67,7 +63,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	// Parse arguments
 	parsed := parser.Parse(args)
-	parsed.Merge(exportFlagProject, exportFlagTask, "", exportFlagFrom, exportFlagUntil)
+	parsed.Merge(exportFlagProject, "", "", exportFlagFrom, exportFlagUntil)
 	if err := parsed.Process(); err != nil {
 		return err
 	}
@@ -75,7 +71,6 @@ func runExport(cmd *cobra.Command, args []string) error {
 	// Build filter
 	filter := storage.BlockFilter{
 		ProjectSID: parsed.ProjectSID,
-		TaskSID:    parsed.TaskSID,
 	}
 
 	if parsed.HasStart {
@@ -114,25 +109,25 @@ func runExport(cmd *cobra.Command, args []string) error {
 }
 
 func exportJSON(w *os.File, blocks []*model.Block) error {
-	output := struct {
-		Version    string              `json:"version"`
-		ExportedAt string              `json:"exported_at"`
+	data := struct {
+		Version    string                `json:"version"`
+		ExportedAt string                `json:"exported_at"`
 		Blocks     []*output.BlockOutput `json:"blocks"`
-		Count      int                 `json:"count"`
+		Count      int                   `json:"count"`
 	}{
-		Version:    "1",
+		Version:    "2",
 		ExportedAt: time.Now().Format(time.RFC3339),
 		Blocks:     make([]*output.BlockOutput, len(blocks)),
 		Count:      len(blocks),
 	}
 
 	for i, b := range blocks {
-		output.Blocks[i] = convertBlockToOutput(b)
+		data.Blocks[i] = convertBlockToOutput(b)
 	}
 
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(output)
+	return encoder.Encode(data)
 }
 
 func exportCSV(w *os.File, blocks []*model.Block) error {
@@ -141,7 +136,7 @@ func exportCSV(w *os.File, blocks []*model.Block) error {
 
 	// Write header
 	if err := writer.Write([]string{
-		"key", "project", "task", "note", "start", "end", "duration_seconds",
+		"date", "project", "start", "end", "duration_hours", "note", "tags",
 	}); err != nil {
 		return err
 	}
@@ -150,17 +145,28 @@ func exportCSV(w *os.File, blocks []*model.Block) error {
 	for _, b := range blocks {
 		endStr := ""
 		if !b.TimestampEnd.IsZero() {
-			endStr = b.TimestampEnd.Format(time.RFC3339)
+			endStr = b.TimestampEnd.Format("15:04")
+		}
+
+		duration := b.Duration().Hours()
+		tags := ""
+		if len(b.Tags) > 0 {
+			for i, t := range b.Tags {
+				if i > 0 {
+					tags += ","
+				}
+				tags += t
+			}
 		}
 
 		if err := writer.Write([]string{
-			b.Key,
+			b.TimestampStart.Format("2006-01-02"),
 			b.ProjectSID,
-			b.TaskSID,
-			b.Note,
-			b.TimestampStart.Format(time.RFC3339),
+			b.TimestampStart.Format("15:04"),
 			endStr,
-			formatInt(b.DurationSeconds()),
+			strconv.FormatFloat(duration, 'f', 2, 64),
+			b.Note,
+			tags,
 		}); err != nil {
 			return err
 		}
@@ -176,17 +182,7 @@ func runBackup() error {
 		return err
 	}
 
-	tasks, err := ctx.TaskRepo.List()
-	if err != nil {
-		return err
-	}
-
 	blocks, err := ctx.BlockRepo.List()
-	if err != nil {
-		return err
-	}
-
-	goals, err := ctx.GoalRepo.List()
 	if err != nil {
 		return err
 	}
@@ -198,22 +194,16 @@ func runBackup() error {
 
 	// Build backup
 	backup := struct {
-		Version     string              `json:"version"`
-		ExportedAt  string              `json:"exported_at"`
-		Config      *model.Config       `json:"config"`
-		Projects    []*model.Project    `json:"projects"`
-		Tasks       []*model.Task       `json:"tasks"`
-		Blocks      []*model.Block      `json:"blocks"`
-		Goals       []*model.Goal       `json:"goals"`
-		ActiveBlock *model.ActiveBlock  `json:"active_block"`
+		Version     string             `json:"version"`
+		ExportedAt  string             `json:"exported_at"`
+		Projects    []*model.Project   `json:"projects"`
+		Blocks      []*model.Block     `json:"blocks"`
+		ActiveBlock *model.ActiveBlock `json:"active_block"`
 	}{
-		Version:     "1",
+		Version:     "2",
 		ExportedAt:  time.Now().Format(time.RFC3339),
-		Config:      ctx.Config,
 		Projects:    projects,
-		Tasks:       tasks,
 		Blocks:      blocks,
-		Goals:       goals,
 		ActiveBlock: activeBlock,
 	}
 
@@ -241,9 +231,7 @@ func runBackup() error {
 		cli := ctx.CLIFormatter()
 		cli.Success("Backup created: " + exportFlagOutput)
 		cli.Printf("  Projects: %d\n", len(projects))
-		cli.Printf("  Tasks: %d\n", len(tasks))
 		cli.Printf("  Blocks: %d\n", len(blocks))
-		cli.Printf("  Goals: %d\n", len(goals))
 	}
 
 	return nil
@@ -253,7 +241,6 @@ func convertBlockToOutput(b *model.Block) *output.BlockOutput {
 	out := &output.BlockOutput{
 		Key:             b.Key,
 		ProjectSID:      b.ProjectSID,
-		TaskSID:         b.TaskSID,
 		Note:            b.Note,
 		TimestampStart:  b.TimestampStart.Format(time.RFC3339),
 		DurationSeconds: b.DurationSeconds(),
@@ -263,8 +250,4 @@ func convertBlockToOutput(b *model.Block) *output.BlockOutput {
 		out.TimestampEnd = b.TimestampEnd.Format(time.RFC3339)
 	}
 	return out
-}
-
-func formatInt(n int64) string {
-	return strconv.FormatInt(n, 10)
 }

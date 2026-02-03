@@ -14,7 +14,6 @@ import (
 // Start command flags.
 var (
 	startFlagProject string
-	startFlagTask    string
 	startFlagNote    string
 	startFlagStart   string
 	startFlagEnd     string
@@ -23,19 +22,17 @@ var (
 
 // startCmd represents the start command.
 var startCmd = &cobra.Command{
-	Use:     "start [on PROJECT[/TASK]] [with note 'NOTE'] [TIMESTAMP]",
-	Aliases: []string{"sta", "str", "s", "started", "switch", "sw"},
+	Use:     "start [PROJECT] [NOTE] [TIMESTAMP]",
+	Aliases: []string{"s", "on"},
 	Short:   "Start tracking time on a project",
-	Long: `Start tracking time on a project, optionally with a task and note.
+	Long: `Start tracking time on a project.
 
 If tracking is already active, the current block is ended and a new one begins.
 
 Examples:
-  humantime start on myproject
-  humantime start on clientwork/bugfix
-  humantime start on clientwork with note 'fixing login issue'
-  humantime start on myproject 2 hours ago
-  humantime start on myproject from 9am to 11am`,
+  ht start myproject
+  ht start clientwork "fixing login issue"
+  ht start myproject 2 hours ago`,
 	RunE: runStart,
 }
 
@@ -49,34 +46,14 @@ var resumeCmd = &cobra.Command{
 func init() {
 	// Start flags
 	startCmd.Flags().StringVarP(&startFlagProject, "project", "p", "", "Project SID")
-	startCmd.Flags().StringVarP(&startFlagTask, "task", "t", "", "Task SID")
 	startCmd.Flags().StringVarP(&startFlagNote, "note", "n", "", "Note for the block")
 	startCmd.Flags().StringVarP(&startFlagStart, "start", "s", "", "Start timestamp")
 	startCmd.Flags().StringVarP(&startFlagEnd, "end", "e", "", "End timestamp (creates completed block)")
 	startCmd.Flags().StringVar(&startFlagTag, "tag", "", "Comma-separated tags (e.g., billable,urgent)")
 
-	// Dynamic completion for projects/tasks
+	// Dynamic completion for projects
 	startCmd.ValidArgsFunction = completeStartArgs
 	startCmd.RegisterFlagCompletionFunc("project", completeProjects)
-	startCmd.RegisterFlagCompletionFunc("task", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		// Complete tasks for the current project
-		projectSID := startFlagProject
-		if projectSID == "" {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		if ctx == nil || ctx.TaskRepo == nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		tasks, err := ctx.TaskRepo.ListByProject(projectSID)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
-		}
-		var completions []string
-		for _, t := range tasks {
-			completions = append(completions, t.SID+"\t"+t.DisplayName)
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
-	})
 
 	// Add resume as subcommand
 	startCmd.AddCommand(resumeCmd)
@@ -87,7 +64,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	parsed := parser.Parse(args)
 
 	// Merge flags (flags override parsed args)
-	parsed.Merge(startFlagProject, startFlagTask, startFlagNote, startFlagStart, startFlagEnd)
+	parsed.Merge(startFlagProject, "", startFlagNote, startFlagStart, startFlagEnd)
 
 	// Process parsed arguments
 	if err := parsed.Process(); err != nil {
@@ -103,9 +80,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if !parser.ValidateSID(parsed.ProjectSID) {
 		return runtime.ErrInvalidSID
 	}
-	if parsed.TaskSID != "" && !parser.ValidateSID(parsed.TaskSID) {
-		return runtime.ErrInvalidSID
-	}
 
 	// Validate timestamps
 	if !parsed.TimestampEnd.IsZero() && parsed.TimestampEnd.Before(parsed.TimestampStart) {
@@ -116,14 +90,6 @@ func runStart(cmd *cobra.Command, args []string) error {
 	_, _, err := ctx.ProjectRepo.GetOrCreate(parsed.ProjectSID, parsed.ProjectSID)
 	if err != nil {
 		return err
-	}
-
-	// Ensure task exists if specified (auto-create if needed)
-	if parsed.TaskSID != "" {
-		_, _, err := ctx.TaskRepo.GetOrCreate(parsed.ProjectSID, parsed.TaskSID, parsed.TaskSID)
-		if err != nil {
-			return err
-		}
 	}
 
 	// End any active tracking first
@@ -143,9 +109,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Create new block
 	block := model.NewBlock(
-		ctx.Config.UserKey,
+		"",
 		parsed.ProjectSID,
-		parsed.TaskSID,
+		"",
 		parsed.Note,
 		parsed.TimestampStart,
 	)
@@ -210,11 +176,11 @@ func runResume(cmd *cobra.Command, args []string) error {
 		return runtime.NewValidationError("resume", "no previous tracking to resume")
 	}
 
-	// Start tracking on the same project/task
+	// Start tracking on the same project
 	block := model.NewBlock(
-		ctx.Config.UserKey,
+		"",
 		previousBlock.ProjectSID,
-		previousBlock.TaskSID,
+		"",
 		"", // No note for resumed blocks
 		time.Now(),
 	)
@@ -238,7 +204,7 @@ func runResume(cmd *cobra.Command, args []string) error {
 	}
 
 	cli := ctx.CLIFormatter()
-	cli.Printf("Resumed tracking on %s\n", cli.FormatProjectTask(block.ProjectSID, block.TaskSID))
+	cli.Printf("Resumed tracking on %s\n", cli.ProjectName(block.ProjectSID))
 	cli.Printf("  Started: %s\n", block.TimestampStart.Format("2006-01-02 15:04:05"))
 	return nil
 }

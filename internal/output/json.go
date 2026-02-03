@@ -99,17 +99,7 @@ func NewBlocksResponse(blocks []*model.Block, total int) *BlocksResponse {
 
 // ProjectOutput represents a project in JSON output.
 type ProjectOutput struct {
-	SID                  string        `json:"sid"`
-	DisplayName          string        `json:"display_name"`
-	Color                string        `json:"color,omitempty"`
-	TotalDurationSeconds int64         `json:"total_duration_seconds"`
-	Tasks                []*TaskOutput `json:"tasks,omitempty"`
-}
-
-// TaskOutput represents a task in JSON output.
-type TaskOutput struct {
 	SID                  string `json:"sid"`
-	ProjectSID           string `json:"project_sid"`
 	DisplayName          string `json:"display_name"`
 	Color                string `json:"color,omitempty"`
 	TotalDurationSeconds int64  `json:"total_duration_seconds"`
@@ -121,17 +111,6 @@ func NewProjectOutput(p *model.Project, duration time.Duration) *ProjectOutput {
 		SID:                  p.SID,
 		DisplayName:          p.DisplayName,
 		Color:                p.Color,
-		TotalDurationSeconds: int64(duration.Seconds()),
-	}
-}
-
-// NewTaskOutput creates a TaskOutput from a Task.
-func NewTaskOutput(t *model.Task, duration time.Duration) *TaskOutput {
-	return &TaskOutput{
-		SID:                  t.SID,
-		ProjectSID:           t.ProjectSID,
-		DisplayName:          t.DisplayName,
-		Color:                t.Color,
 		TotalDurationSeconds: int64(duration.Seconds()),
 	}
 }

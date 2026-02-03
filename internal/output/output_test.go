@@ -571,23 +571,6 @@ func TestNewProjectOutput(t *testing.T) {
 	assert.Equal(t, int64(7200), out.TotalDurationSeconds)
 }
 
-func TestNewTaskOutput(t *testing.T) {
-	task := &model.Task{
-		SID:         "mytask",
-		ProjectSID:  "myproject",
-		DisplayName: "My Task",
-		Color:       "#00FF00",
-	}
-
-	out := NewTaskOutput(task, 30*time.Minute)
-
-	assert.Equal(t, "mytask", out.SID)
-	assert.Equal(t, "myproject", out.ProjectSID)
-	assert.Equal(t, "My Task", out.DisplayName)
-	assert.Equal(t, "#00FF00", out.Color)
-	assert.Equal(t, int64(1800), out.TotalDurationSeconds)
-}
-
 func TestJSONFormatterPrintStatus(t *testing.T) {
 	t.Run("idle", func(t *testing.T) {
 		var buf bytes.Buffer

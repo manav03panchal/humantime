@@ -9,19 +9,16 @@ import (
 
 // Common errors.
 var (
-	ErrNoActiveTracking  = errors.New("no active tracking")
-	ErrProjectRequired   = errors.New("project is required")
-	ErrInvalidSID        = errors.New("invalid simplified ID")
-	ErrInvalidTimestamp  = errors.New("invalid timestamp")
-	ErrEndBeforeStart    = errors.New("end time must be after start time")
-	ErrBlockNotFound     = errors.New("block not found")
-	ErrProjectNotFound   = errors.New("project not found")
-	ErrTaskNotFound      = errors.New("task not found")
-	ErrGoalNotFound      = errors.New("goal not found")
-	ErrInvalidColor      = errors.New("invalid color format (use #RRGGBB)")
-	ErrInvalidGoalType   = errors.New("invalid goal type (use daily or weekly)")
-	ErrInvalidDuration   = errors.New("invalid duration")
-	ErrDiskFull          = errors.New("disk full: unable to write to database")
+	ErrNoActiveTracking = errors.New("no active tracking")
+	ErrProjectRequired  = errors.New("project is required")
+	ErrInvalidSID       = errors.New("invalid simplified ID")
+	ErrInvalidTimestamp = errors.New("invalid timestamp")
+	ErrEndBeforeStart   = errors.New("end time must be after start time")
+	ErrBlockNotFound    = errors.New("block not found")
+	ErrProjectNotFound  = errors.New("project not found")
+	ErrInvalidColor     = errors.New("invalid color format (use #RRGGBB)")
+	ErrInvalidDuration  = errors.New("invalid duration")
+	ErrDiskFull         = errors.New("disk full: unable to write to database")
 )
 
 // ParseError represents a parsing error with context.
@@ -64,16 +61,14 @@ func NewValidationError(field, message string) *ValidationError {
 
 // Suggestions provides helpful suggestions for common errors.
 var Suggestions = map[error]string{
-	ErrNoActiveTracking: "Use 'humantime start on <project>' to begin tracking.",
-	ErrProjectRequired:  "Specify a project with 'on <project>' or use the -p flag.",
+	ErrNoActiveTracking: "Use 'ht start <project>' to begin tracking.",
+	ErrProjectRequired:  "Specify a project as the first argument.",
 	ErrInvalidSID:       "SIDs must be alphanumeric with dashes, underscores, or periods (max 32 chars).",
 	ErrInvalidTimestamp: "Try formats like '2 hours ago', 'yesterday at 3pm', or '9am'.",
 	ErrEndBeforeStart:   "Check your timestamps - end must come after start.",
-	ErrBlockNotFound:    "Use 'humantime blocks' to see available blocks.",
-	ErrProjectNotFound:  "Use 'humantime project' to see available projects.",
-	ErrTaskNotFound:     "Use 'humantime task' to see tasks for a project.",
+	ErrBlockNotFound:    "Use 'ht blocks' to see available blocks.",
+	ErrProjectNotFound:  "Use 'ht projects' to see available projects.",
 	ErrInvalidColor:     "Use hex color format like '#FF5733' or '#00FF00'.",
-	ErrInvalidGoalType:  "Use --daily or --weekly to set goal type.",
 	ErrDiskFull:         "Free up disk space and try again. Your active tracking state is preserved in memory.",
 }
 

@@ -22,10 +22,10 @@ var projectCmd = &cobra.Command{
 	Long: `List all projects, show details for a specific project, or manage projects.
 
 Examples:
-  humantime project
-  humantime project clientwork
-  humantime project create "Client Work" --color "#FF5733"
-  humantime project edit clientwork --name "New Name"`,
+  ht projects
+  ht project clientwork
+  ht project new "Client Work"
+  ht project archive clientwork`,
 	RunE: runProjectList,
 }
 
@@ -40,7 +40,7 @@ var (
 
 // projectCreateCmd creates a new project.
 var projectCreateCmd = &cobra.Command{
-	Use:   "create NAME",
+	Use:   "new NAME",
 	Short: "Create a new project",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runProjectCreate,
@@ -56,17 +56,14 @@ var projectEditCmd = &cobra.Command{
 
 // projectDeleteCmd deletes a project.
 var projectDeleteCmd = &cobra.Command{
-	Use:   "delete PROJECT_SID",
-	Short: "Delete a project and all its data",
-	Long: `Delete a project and optionally all associated tasks, blocks, goals, and reminders.
-
-WARNING: This operation cannot be undone. All time tracking data for this project will be lost.
+	Use:   "archive PROJECT_SID",
+	Short: "Archive a project (soft delete)",
+	Long: `Archive a project. Archived projects are hidden from lists but data is preserved.
 
 Examples:
-  humantime project delete myproject
-  humantime project delete myproject --force`,
+  ht project archive myproject`,
 	Args: cobra.ExactArgs(1),
-	RunE: runProjectDelete,
+	RunE: runProjectArchive,
 }
 
 func init() {
@@ -78,7 +75,7 @@ func init() {
 	projectEditCmd.Flags().StringVarP(&projectEditFlagName, "name", "n", "", "Update display name")
 	projectEditCmd.Flags().StringVarP(&projectEditFlagColor, "color", "c", "", "Update color")
 
-	// Delete flags
+	// Archive flags
 	projectDeleteCmd.Flags().BoolVar(&projectDeleteFlagForce, "force", false, "Skip confirmation prompt")
 
 	// Dynamic completion for projects
@@ -104,6 +101,14 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Filter out archived projects
+	activeProjects := make([]*model.Project, 0)
+	for _, p := range projects {
+		if !p.Archived {
+			activeProjects = append(activeProjects, p)
+		}
+	}
+
 	// Calculate durations for each project
 	blocks, err := ctx.BlockRepo.List()
 	if err != nil {
@@ -115,14 +120,14 @@ func runProjectList(cmd *cobra.Command, args []string) error {
 	}
 
 	if ctx.IsJSON() {
-		outputs := make([]*output.ProjectOutput, len(projects))
-		for i, p := range projects {
+		outputs := make([]*output.ProjectOutput, len(activeProjects))
+		for i, p := range activeProjects {
 			outputs[i] = output.NewProjectOutput(p, secondsToDuration(projectDurations[p.SID]))
 		}
 		return ctx.Formatter.JSON(output.ProjectsResponse{Projects: outputs})
 	}
 
-	return printProjectsCLI(projects, projectDurations)
+	return printProjectsCLI(activeProjects, projectDurations)
 }
 
 func showProject(sid string) error {
@@ -140,26 +145,14 @@ func showProject(sid string) error {
 		return err
 	}
 
-	// Get tasks for this project
-	tasks, err := ctx.TaskRepo.ListByProject(sid)
-	if err != nil {
-		return err
-	}
-
-	// Calculate task durations
-	taskDurations := make(map[string]int64)
+	// Calculate total duration
 	var totalDuration int64
 	for _, b := range blocks {
-		taskDurations[b.TaskSID] += b.DurationSeconds()
 		totalDuration += b.DurationSeconds()
 	}
 
 	if ctx.IsJSON() {
 		out := output.NewProjectOutput(project, secondsToDuration(totalDuration))
-		out.Tasks = make([]*output.TaskOutput, len(tasks))
-		for i, t := range tasks {
-			out.Tasks[i] = output.NewTaskOutput(t, secondsToDuration(taskDurations[t.SID]))
-		}
 		return ctx.Formatter.JSON(out)
 	}
 
@@ -170,16 +163,8 @@ func showProject(sid string) error {
 		cli.Printf("  Color: %s\n", project.Color)
 	}
 	cli.Printf("  Total Time: %s\n", cli.Duration(output.FormatDuration(secondsToDuration(totalDuration))))
+	cli.Printf("  Blocks: %d\n", len(blocks))
 	cli.Println("")
-
-	if len(tasks) > 0 {
-		cli.Println("Tasks:")
-		for _, t := range tasks {
-			dur := taskDurations[t.SID]
-			cli.Printf("  • %s  %s\n", cli.TaskName(t.SID), cli.Duration(output.FormatDuration(secondsToDuration(dur))))
-		}
-		cli.Println("")
-	}
 
 	if len(blocks) > 0 {
 		cli.Println("Recent Blocks:")
@@ -189,9 +174,8 @@ func showProject(sid string) error {
 		}
 		for i := 0; i < limit; i++ {
 			b := blocks[i]
-			cli.Printf("  %s  %s  %s",
+			cli.Printf("  %s  %s",
 				output.FormatDate(b.TimestampStart),
-				cli.TaskName(b.TaskSID),
 				cli.Duration(output.FormatDuration(b.Duration())))
 			if b.Note != "" {
 				cli.Printf("  %s", cli.Note(b.Note))
@@ -302,7 +286,7 @@ func runProjectEdit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runProjectDelete(cmd *cobra.Command, args []string) error {
+func runProjectArchive(cmd *cobra.Command, args []string) error {
 	sid := args[0]
 
 	// Verify project exists
@@ -316,14 +300,6 @@ func runProjectDelete(cmd *cobra.Command, args []string) error {
 
 	// Count associated data
 	blocks, _ := ctx.BlockRepo.ListByProject(sid)
-	tasks, _ := ctx.TaskRepo.ListByProject(sid)
-	reminders, _ := ctx.ReminderRepo.ListByProject(sid)
-	goal, _ := ctx.GoalRepo.Get(sid)
-
-	blockCount := len(blocks)
-	taskCount := len(tasks)
-	reminderCount := len(reminders)
-	hasGoal := goal != nil
 
 	// Calculate total tracked time
 	var totalSeconds int64
@@ -333,22 +309,15 @@ func runProjectDelete(cmd *cobra.Command, args []string) error {
 
 	cli := ctx.CLIFormatter()
 
-	// Show what will be deleted
+	// Show what will be archived
 	if !projectDeleteFlagForce {
-		cli.Warning(fmt.Sprintf("About to delete project '%s'", sid))
+		cli.Warning(fmt.Sprintf("About to archive project '%s'", sid))
 		cli.Println("")
 		cli.Printf("  Display Name: %s\n", project.DisplayName)
 		cli.Printf("  Total Time:   %s\n", output.FormatDuration(secondsToDuration(totalSeconds)))
-		cli.Printf("  Blocks:       %d\n", blockCount)
-		cli.Printf("  Tasks:        %d\n", taskCount)
-		if hasGoal {
-			cli.Printf("  Goal:         yes\n")
-		}
-		if reminderCount > 0 {
-			cli.Printf("  Reminders:    %d\n", reminderCount)
-		}
+		cli.Printf("  Blocks:       %d\n", len(blocks))
 		cli.Println("")
-		cli.Warning("This action cannot be undone!")
+		cli.Muted("Data will be preserved but project hidden from lists.")
 		cli.Println("")
 
 		confirmed, err := promptConfirmation("Are you sure? (y/N): ")
@@ -358,37 +327,21 @@ func runProjectDelete(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Delete associated data
-	for _, b := range blocks {
-		_ = ctx.BlockRepo.Delete(b.Key)
-	}
-	for _, t := range tasks {
-		_ = ctx.TaskRepo.Delete(sid, t.SID)
-	}
-	for _, r := range reminders {
-		_ = ctx.ReminderRepo.Delete(r.Key)
-	}
-	if hasGoal {
-		_ = ctx.GoalRepo.Delete(sid)
-	}
-
-	// Delete the project
-	if err := ctx.ProjectRepo.Delete(sid); err != nil {
+	// Archive the project
+	project.Archived = true
+	if err := ctx.ProjectRepo.Update(project); err != nil {
 		return err
 	}
 
 	if ctx.IsJSON() {
 		return ctx.Formatter.JSON(map[string]any{
-			"status":          "deleted",
-			"project_sid":     sid,
-			"blocks_deleted":  blockCount,
-			"tasks_deleted":   taskCount,
-			"goal_deleted":    hasGoal,
-			"reminders_deleted": reminderCount,
+			"status":      "archived",
+			"project_sid": sid,
+			"blocks":      len(blocks),
 		})
 	}
 
-	cli.Success(fmt.Sprintf("Deleted project '%s' and all associated data", sid))
+	cli.Success(fmt.Sprintf("Archived project '%s'", sid))
 	return nil
 }
 
@@ -397,7 +350,7 @@ func printProjectsCLI(projects []*model.Project, durations map[string]int64) err
 
 	if len(projects) == 0 {
 		cli.Muted("No projects found.")
-		cli.Muted("Use 'humantime start on <project>' to create one.")
+		cli.Muted("Use 'ht start <project>' to create one.")
 		return nil
 	}
 
@@ -445,3 +398,5 @@ func printProjectsCLI(projects []*model.Project, durations map[string]int64) err
 func secondsToDuration(seconds int64) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
+
+// promptConfirmation is defined in blocks.go

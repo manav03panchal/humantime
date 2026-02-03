@@ -4,7 +4,6 @@ package runtime
 import (
 	"os"
 
-	"github.com/manav03panchal/humantime/internal/model"
 	"github.com/manav03panchal/humantime/internal/output"
 	"github.com/manav03panchal/humantime/internal/storage"
 )
@@ -12,20 +11,13 @@ import (
 // Context holds the application runtime context.
 type Context struct {
 	DB        *storage.DB
-	Config    *model.Config
 	Formatter *output.Formatter
 
 	// Repositories
-	BlockRepo        *storage.BlockRepo
-	ProjectRepo      *storage.ProjectRepo
-	TaskRepo         *storage.TaskRepo
-	ConfigRepo       *storage.ConfigRepo
-	ActiveBlockRepo  *storage.ActiveBlockRepo
-	GoalRepo         *storage.GoalRepo
-	UndoRepo         *storage.UndoRepo
-	ReminderRepo     *storage.ReminderRepo
-	WebhookRepo      *storage.WebhookRepo
-	NotifyConfigRepo *storage.NotifyConfigRepo
+	BlockRepo       *storage.BlockRepo
+	ProjectRepo     *storage.ProjectRepo
+	ActiveBlockRepo *storage.ActiveBlockRepo
+	UndoRepo        *storage.UndoRepo
 
 	// Debug mode
 	Debug bool
@@ -74,21 +66,8 @@ func New(opts Options) (*Context, error) {
 	// Create repositories
 	blockRepo := storage.NewBlockRepo(db)
 	projectRepo := storage.NewProjectRepo(db)
-	taskRepo := storage.NewTaskRepo(db)
-	configRepo := storage.NewConfigRepo(db)
 	activeBlockRepo := storage.NewActiveBlockRepo(db)
-	goalRepo := storage.NewGoalRepo(db)
 	undoRepo := storage.NewUndoRepo(db)
-	reminderRepo := storage.NewReminderRepo(db)
-	webhookRepo := storage.NewWebhookRepo(db)
-	notifyConfigRepo := storage.NewNotifyConfigRepo(db)
-
-	// Get or create config
-	config, err := configRepo.Get()
-	if err != nil {
-		db.Close()
-		return nil, err
-	}
 
 	// Create formatter
 	formatter := output.NewFormatter()
@@ -96,20 +75,13 @@ func New(opts Options) (*Context, error) {
 	formatter.ColorMode = opts.ColorMode
 
 	return &Context{
-		DB:               db,
-		Config:           config,
-		Formatter:        formatter,
-		BlockRepo:        blockRepo,
-		ProjectRepo:      projectRepo,
-		TaskRepo:         taskRepo,
-		ConfigRepo:       configRepo,
-		ActiveBlockRepo:  activeBlockRepo,
-		GoalRepo:         goalRepo,
-		UndoRepo:         undoRepo,
-		ReminderRepo:     reminderRepo,
-		WebhookRepo:      webhookRepo,
-		NotifyConfigRepo: notifyConfigRepo,
-		Debug:            opts.Debug,
+		DB:              db,
+		Formatter:       formatter,
+		BlockRepo:       blockRepo,
+		ProjectRepo:     projectRepo,
+		ActiveBlockRepo: activeBlockRepo,
+		UndoRepo:        undoRepo,
+		Debug:           opts.Debug,
 	}, nil
 }
 

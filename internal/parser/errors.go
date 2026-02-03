@@ -160,11 +160,6 @@ func ValidateAndSuggest(inputType, input string) error {
 		if result.Error != nil {
 			return NewTimestampError(input)
 		}
-	case "deadline":
-		result := ParseDeadline(input)
-		if result.Error != nil {
-			return NewDeadlineError(input)
-		}
 	default:
 		return fmt.Errorf("unknown input type: %s", inputType)
 	}
